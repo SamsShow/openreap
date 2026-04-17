@@ -277,6 +277,36 @@ export default function PayoutsPage() {
           </motion.div>
         )}
 
+        {/* Auto-prompt to link a connected-but-unlinked wallet to the account
+            so future withdrawals default to it without a round-trip. */}
+        {isConnected &&
+          address &&
+          user &&
+          !user.wallet_address &&
+          user.wallet_address !== address && (
+            <motion.div
+              variants={fadeUp}
+              className="mt-6 px-5 py-4 rounded-xl bg-terracotta/10 border border-terracotta/30 flex items-center justify-between gap-4 flex-wrap"
+            >
+              <div className="min-w-0">
+                <p className="text-sm text-cream font-medium">
+                  Link {short(address)} to your account?
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  One signature and future withdrawals auto-fill this wallet as
+                  the destination.
+                </p>
+              </div>
+              <button
+                onClick={handleLinkWallet}
+                disabled={linking}
+                className="text-xs px-4 py-2 rounded-full bg-terracotta text-off-white hover:opacity-90 transition-opacity disabled:opacity-50 flex-shrink-0"
+              >
+                {linking ? "Signing..." : "Link wallet"}
+              </button>
+            </motion.div>
+          )}
+
         <motion.div
           className="mt-6 grid grid-cols-3 gap-5"
           variants={stagger}
