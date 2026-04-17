@@ -105,6 +105,11 @@ export function classifyElsaError(
 
 /** Turn a thrown error from wagmi/viem signing into a friendly X402ClientError. */
 export function classifySignError(err: unknown): X402ClientError {
+  // Pass-through: if the caller already threw a classified error (e.g. the
+  // pre-flight balance check in signX402Payment), don't downgrade it to a
+  // generic "Wallet error".
+  if (err instanceof X402ClientError) return err;
+
   const msg = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : "";
   const lower = msg.toLowerCase();

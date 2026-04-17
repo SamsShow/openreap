@@ -204,6 +204,26 @@ export default function AgentProfilePage() {
 
       const data = (await res.json()) as Record<string, unknown>;
       if (!res.ok) {
+        const reason = (data.reason as string) ?? "";
+        // Facilitator reverted because the payer's USDC balance on the asset
+        // contract is less than the hire fee — reclassify with an actionable
+        // message instead of dumping the raw viem trace.
+        if (/exceeds balance|insufficient/i.test(reason)) {
+          const priceUsd = Number(currentAgent.price_cents) / 100;
+          const short = address
+            ? `${address.slice(0, 6)}…${address.slice(-4)}`
+            : "your wallet";
+          throw new X402ClientError(
+            "insufficient_funds",
+            "Not enough USDC on Base Sepolia",
+            `Your wallet ${short} doesn't hold $${priceUsd.toFixed(2)} USDC on Base Sepolia. Fund it and retry.`,
+            {
+              hint:
+                "Get Sepolia USDC at https://faucet.circle.com (pick Base Sepolia). The token contract is 0x036CbD53842c5426634e7929541eC2318f3dCF7e — any other 'USDC' on Base Sepolia won't work.",
+              details: data,
+            }
+          );
+        }
         throw new X402ClientError(
           "facilitator_failed",
           "Agent rejected the payment",
