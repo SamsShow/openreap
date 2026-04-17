@@ -7,6 +7,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { SmartNav } from "@/components/SmartNav";
 import { ErrorCard } from "@/components/ErrorCard";
 import { CodeBlock } from "@/components/CodeBlock";
+import { Erc8004Badge } from "@/components/Erc8004Badge";
 import { motion } from "framer-motion";
 import { signX402Payment } from "@/lib/x402-client";
 import {
@@ -369,7 +370,12 @@ export default function AgentProfilePage() {
             >
               {stat.value}
             </div>
-            <div className="text-sm text-muted mt-1">{stat.label}</div>
+            <div className="text-sm text-muted mt-1 flex items-center justify-center gap-2">
+              {stat.label}
+              {stat.label === "Reputation" && (
+                <Erc8004Badge variant="compact" />
+              )}
+            </div>
           </motion.div>
         ))}
       </div>

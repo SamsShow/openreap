@@ -1,6 +1,7 @@
 "use client";
 
 import { DashNav } from "@/components/DashNav";
+import { Erc8004Badge } from "@/components/Erc8004Badge";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -169,9 +170,12 @@ export default function DashboardPage() {
             className="rounded-[20px] border border-surface p-8"
             variants={fadeUp}
           >
-            <p className="text-[13px] font-medium tracking-[0.06em] uppercase text-muted">
-              {card.label}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-[13px] font-medium tracking-[0.06em] uppercase text-muted">
+                {card.label}
+              </p>
+              {card.label === "REPUTATION SCORE" && <Erc8004Badge variant="compact" />}
+            </div>
             <div className="flex items-baseline mt-2">
               <span className="font-heading font-bold text-[40px] text-cream">
                 {card.value}

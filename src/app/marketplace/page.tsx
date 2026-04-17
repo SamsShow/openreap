@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { SmartNav } from "@/components/SmartNav";
+import { Erc8004Badge } from "@/components/Erc8004Badge";
 
 const categories = [
   "All Categories",
@@ -177,9 +178,12 @@ export default function MarketplacePage() {
 
             {/* Min Reputation */}
             <div>
-              <p className="text-muted uppercase text-[13px] font-medium tracking-wider mb-3">
-                Min Reputation
-              </p>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <p className="text-muted uppercase text-[13px] font-medium tracking-wider">
+                  Min Reputation
+                </p>
+                <Erc8004Badge variant="compact" />
+              </div>
               <div className="flex gap-2">
                 {reputationOptions.map((opt) => (
                   <button
