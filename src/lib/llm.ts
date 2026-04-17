@@ -14,32 +14,52 @@ const openrouter = new OpenAI({
 });
 
 // ---------------------------------------------------------------------------
-// Model mapping  (tech doc Section 8.1)
+// Model mapping
+//
+// Agents may store either a friendly key ("openrouter-free") or a raw
+// OpenRouter model ID ("meta-llama/llama-3.1-8b-instruct:free"). Both
+// resolve to the same wire call. Anything unrecognized falls back to the
+// free Llama endpoint so a mis-set agent row doesn't 400 out.
 // ---------------------------------------------------------------------------
 
-export type ModelKey =
-  | "openrouter-free"
-  | "mistral-7b"
-  | "gemma-2-9b"
-  | "claude-haiku"
-  | "gpt-4o-mini";
+export type ModelKey = string;
 
-const MODEL_IDS: Record<ModelKey, string> = {
-  "openrouter-free": "meta-llama/llama-3.1-8b-instruct",
-  "mistral-7b": "mistralai/mistral-7b-instruct-v0.1",
-  "gemma-2-9b": "google/gemma-2-9b-it",
+const DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
+
+const FRIENDLY_ALIASES: Record<string, string> = {
+  "openrouter-free": DEFAULT_MODEL,
+  "mistral-7b": "mistralai/mistral-7b-instruct:free",
+  "gemma-2-9b": "google/gemma-2-9b-it:free",
   "claude-haiku": "anthropic/claude-3.5-haiku",
   "gpt-4o-mini": "openai/gpt-4o-mini",
+  // Defensive aliases for a few values we've seen in the wild
+  standard: DEFAULT_MODEL,
+  none: DEFAULT_MODEL,
+  "": DEFAULT_MODEL,
 };
 
-// Cost per token in USDC (USD ≈ USDC at 1:1)
-const COST_PER_TOKEN: Record<ModelKey, number> = {
-  "openrouter-free": 0.00000006, // llama-3.1-8b
-  "mistral-7b": 0.00000006,
-  "gemma-2-9b": 0.00000008,
-  "claude-haiku": 0.0000008, // claude-3.5-haiku
-  "gpt-4o-mini": 0.0000006,
+const COST_PER_TOKEN: Record<string, number> = {
+  "meta-llama/llama-3.1-8b-instruct:free": 0,
+  "meta-llama/llama-3.1-8b-instruct": 0.00000006,
+  "mistralai/mistral-7b-instruct:free": 0,
+  "google/gemma-2-9b-it:free": 0,
+  "anthropic/claude-3.5-haiku": 0.0000008,
+  "openai/gpt-4o-mini": 0.0000006,
 };
+
+const DEFAULT_COST_PER_TOKEN = 0.0000001; // conservative estimate for unknown models
+
+function resolveModelId(key: string | null | undefined): string {
+  const raw = (key ?? "").trim();
+  if (!raw) return DEFAULT_MODEL;
+  if (raw in FRIENDLY_ALIASES) return FRIENDLY_ALIASES[raw];
+  // Anything containing a slash looks like a provider/model OpenRouter id
+  if (raw.includes("/")) return raw;
+  console.warn(
+    `[llm] Unknown model "${raw}" — falling back to ${DEFAULT_MODEL}`
+  );
+  return DEFAULT_MODEL;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,8 +83,8 @@ export async function callLLM(
   userInput: string,
   modelKey: ModelKey
 ): Promise<LLMResult> {
-  const modelId = MODEL_IDS[modelKey];
-  const costPerToken = COST_PER_TOKEN[modelKey];
+  const modelId = resolveModelId(modelKey);
+  const costPerToken = COST_PER_TOKEN[modelId] ?? DEFAULT_COST_PER_TOKEN;
 
   const startMs = Date.now();
 

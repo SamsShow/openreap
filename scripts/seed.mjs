@@ -19,6 +19,20 @@ async function seed() {
   await sql`ALTER TABLE balances ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`;
   console.log("  ✓ Ensured updated_at column exists on balances");
 
+  // Normalize any legacy agent.model values that OpenRouter rejects. Anything
+  // without a `/` (e.g. "standard", "none", "", "openrouter-free") gets
+  // rewritten to the real free Llama id so callLLM doesn't 400 out.
+  const normalized = await sql`
+    UPDATE agents
+    SET model = 'meta-llama/llama-3.1-8b-instruct:free'
+    WHERE is_reap_agent = false
+      AND (model IS NULL OR model NOT LIKE '%/%')
+    RETURNING id
+  `;
+  console.log(
+    `  ✓ Normalized ${normalized.length} agents with invalid model values`
+  );
+
   // 1. Create demo user
   const passwordHash = await bcrypt.hash("password123", 12);
   const [user] = await sql`
