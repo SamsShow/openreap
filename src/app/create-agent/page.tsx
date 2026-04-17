@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { DashNav } from "@/components/DashNav";
@@ -69,6 +69,14 @@ type TestResult = {
 };
 
 export default function CreateAgentPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateAgentInner />
+    </Suspense>
+  );
+}
+
+function CreateAgentInner() {
   const router = useRouter();
   const [user, setUser] = useState<{ display_name: string | null; email: string } | null>(null);
   const [skillMd, setSkillMd] = useState("");
@@ -82,6 +90,8 @@ export default function CreateAgentPage() {
   const [agent, setAgent] = useState<{ slug: string; name: string; status: string } | null>(null);
   const [error, setError] = useState("");
 
+  const searchParams = useSearchParams();
+
   useEffect(() => {
     fetch("/api/user/me")
       .then((r) => (r.ok ? r.json() : null))
@@ -91,6 +101,11 @@ export default function CreateAgentPage() {
       })
       .catch(() => router.push("/auth"));
   }, [router]);
+
+  useEffect(() => {
+    const template = searchParams.get("template");
+    if (template) setSkillMd(template);
+  }, [searchParams]);
 
   async function handleParse() {
     setError("");

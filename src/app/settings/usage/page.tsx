@@ -209,32 +209,6 @@ export default function UsagePage() {
         </div>
       </motion.div>
 
-      {/* Upsell banner */}
-      <motion.div
-        className="px-16 max-w-[900px] mt-8 mb-16"
-        initial="hidden"
-        animate="visible"
-        variants={fadeIn}
-      >
-        <div className="rounded-[20px] border border-surface p-8 flex items-center justify-between">
-          <div>
-            <p className="font-medium text-[15px] text-cream">
-              Running low? Buy more jobs
-            </p>
-            <p className="text-sm text-muted mt-1">
-              Or upgrade to Pro for unlimited
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button className="px-5 py-2.5 rounded-full border border-border text-sm text-cream">
-              +500 jobs &mdash; $19
-            </button>
-            <button className="px-5 py-2.5 rounded-full bg-terracotta text-sm font-medium text-off-white">
-              Upgrade to Pro
-            </button>
-          </div>
-        </div>
-      </motion.div>
     </div>
   );
 }

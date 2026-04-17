@@ -166,7 +166,8 @@ export default function PlansUpgradePage() {
             Plans & Upgrade
           </h1>
           <p className="text-[15px] text-muted mt-2">
-            Your current plan: {planDisplayName(currentPlan)} &middot; You earned $280 last month
+            Your current plan: {planDisplayName(currentPlan)}. Paid tiers are
+            previews &mdash; billing is not wired yet.
           </p>
         </motion.div>
 
@@ -202,9 +203,9 @@ export default function PlansUpgradePage() {
                   Current plan
                 </div>
               ) : (
-                <button className="py-3 rounded-full border border-cream text-[15px] text-cream w-full hover:bg-cream/5 transition-colors">
-                  Switch to Starter
-                </button>
+                <div className="py-3 rounded-full border border-surface text-[13px] text-muted text-center w-full cursor-default">
+                  Switching coming soon
+                </div>
               )}
             </div>
           </motion.div>
@@ -240,9 +241,9 @@ export default function PlansUpgradePage() {
                   Current plan
                 </div>
               ) : (
-                <button className="py-3 rounded-full border border-cream text-[15px] text-cream w-full hover:bg-cream/5 transition-colors">
-                  Add API key &rarr;
-                </button>
+                <div className="py-3 rounded-full border border-surface text-[13px] text-muted text-center w-full cursor-default">
+                  Switching coming soon
+                </div>
               )}
             </div>
           </motion.div>
@@ -283,9 +284,9 @@ export default function PlansUpgradePage() {
                   Current plan
                 </div>
               ) : (
-                <button className="py-3 rounded-full bg-terracotta text-[15px] font-medium text-off-white w-full hover:opacity-90 transition-opacity">
-                  Upgrade &rarr; est. $800/mo
-                </button>
+                <div className="py-3 rounded-full border border-terracotta/40 text-[13px] text-terracotta/80 text-center w-full cursor-default">
+                  Billing not live yet
+                </div>
               )}
             </div>
           </motion.div>

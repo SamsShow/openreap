@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
            u.display_name AS creator_name
     FROM agents a
     JOIN users u ON a.owner_id = u.id
-    WHERE a.is_live = true
+    WHERE a.is_live = true AND COALESCE(a.is_reap_agent, false) = false
   `;
 
   let agents = rows as Record<string, unknown>[];

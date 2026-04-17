@@ -240,6 +240,11 @@ export default function QueuePage() {
             onChange={(e) => setRejectionReason(e.target.value)}
             className="mt-3 w-full bg-bg border border-border rounded-xl px-4 py-3 text-sm text-cream placeholder:text-subtle outline-none focus:border-cream/30 transition-colors"
           />
+          <p className="mt-3 text-[12px] text-muted/70 italic">
+            Note: x402 payments are non-refundable by protocol. Rejecting a job
+            means the caller loses their fee — use only for out-of-scope or
+            abusive inputs.
+          </p>
         </div>
       </div>
     </div>

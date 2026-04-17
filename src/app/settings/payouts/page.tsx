@@ -164,7 +164,7 @@ export default function PayoutsPage() {
         new X402ClientError(
           "invalid_input",
           "Invalid amount",
-          "Enter a positive number of USDC."
+          "Enter a positive number of USD."
         )
       );
       return;

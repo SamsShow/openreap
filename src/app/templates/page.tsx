@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { SmartNav } from "@/components/SmartNav";
 import { motion, type Variants } from "framer-motion";
 
@@ -172,9 +173,12 @@ export default function TemplatesPage() {
                 <span className="text-sm text-muted">
                   {template.downloads} downloads
                 </span>
-                <button className="px-5 py-2 bg-terracotta rounded-full text-[14px] font-medium text-off-white cursor-pointer">
-                  Download
-                </button>
+                <Link
+                  href={`/create-agent?template=${encodeURIComponent(template.code)}`}
+                  className="px-5 py-2 bg-terracotta rounded-full text-[14px] font-medium text-off-white cursor-pointer hover:opacity-90 transition-opacity"
+                >
+                  Use this template
+                </Link>
               </div>
             </motion.div>
           ))}

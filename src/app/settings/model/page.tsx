@@ -28,6 +28,11 @@ const proModels = [
 
 export default function ModelSettingsPage() {
   const [selectedModel, setSelectedModel] = useState<string>(freeModels[0].id);
+  const [savedModel, setSavedModel] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<
+    { kind: "success"; message: string } | { kind: "error"; message: string } | null
+  >(null);
   const [user, setUser] = useState<{ display_name: string | null; email: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -43,14 +48,16 @@ export default function ModelSettingsPage() {
 
         if (agentsData.agents && agentsData.agents.length > 0) {
           const agentModel = agentsData.agents[0].model;
-          // Match against known model IDs, or use raw value
           const allIds = [...freeModels.map((m) => m.id), ...proModels.map((m) => m.id)];
           if (allIds.includes(agentModel)) {
             setSelectedModel(agentModel);
+            setSavedModel(agentModel);
           } else {
-            // Try partial match (model name might not include provider prefix)
             const match = allIds.find((id) => id.includes(agentModel) || agentModel.includes(id));
-            if (match) setSelectedModel(match);
+            if (match) {
+              setSelectedModel(match);
+              setSavedModel(match);
+            }
           }
         }
 
@@ -65,6 +72,45 @@ export default function ModelSettingsPage() {
     };
     fetchData();
   }, []);
+
+  async function handleSave() {
+    setSaveStatus(null);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/user/model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedModel }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveStatus({
+          kind: "error",
+          message: data.error || `Failed (HTTP ${res.status})`,
+        });
+        return;
+      }
+      setSavedModel(selectedModel);
+      const n = data.agents_updated ?? 0;
+      setSaveStatus({
+        kind: "success",
+        message:
+          n === 0
+            ? "Preference saved. It'll apply when you create your first agent."
+            : `Updated ${n} agent${n === 1 ? "" : "s"} to this model.`,
+      });
+      setTimeout(() => setSaveStatus(null), 4000);
+    } catch (err) {
+      setSaveStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const hasChanges = savedModel !== selectedModel;
 
   if (loading) {
     return (
@@ -172,28 +218,36 @@ export default function ModelSettingsPage() {
           </div>
         </motion.div>
 
-        {/* BYOK section */}
+        {/* Save button */}
+        <motion.div variants={fadeUp} className="px-16 max-w-[800px] mt-8 flex items-center gap-4 flex-wrap">
+          <button
+            onClick={handleSave}
+            disabled={!hasChanges || saving}
+            className="px-6 py-2.5 bg-terracotta rounded-full text-[14px] font-medium text-off-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {saving ? "Saving..." : hasChanges ? "Save changes" : "Saved"}
+          </button>
+          {saveStatus && (
+            <p
+              className={`text-sm ${
+                saveStatus.kind === "success" ? "text-success" : "text-red-400"
+              }`}
+            >
+              {saveStatus.message}
+            </p>
+          )}
+        </motion.div>
+
+        {/* BYOK note (not yet wired) */}
         <motion.div variants={fadeUp} className="px-16 max-w-[800px] mt-8 mb-16">
-          <div className="rounded-[20px] bg-surface border border-border p-8">
+          <div className="rounded-[20px] border border-border p-8">
             <h2 className="font-medium text-[15px] text-cream">
               Bring your own API key
             </h2>
             <p className="text-[14px] text-muted mt-2 leading-6">
-              Paste any OpenRouter, Anthropic, or OpenAI key. 75/25 auto-split,
-              unlimited jobs, you pay LLM costs directly.
-            </p>
-            <div className="mt-4 flex gap-3">
-              <input
-                type="text"
-                placeholder="sk-or-v1-••••••••••••••••••"
-                className="flex-1 bg-bg border border-border rounded-xl px-4 py-3 text-sm text-muted outline-none"
-              />
-              <button className="px-5 py-3 bg-success rounded-xl text-sm font-medium text-bg">
-                Save key
-              </button>
-            </div>
-            <p className="text-[12px] text-muted mt-3">
-              Key is encrypted at rest. We never log it. You can revoke anytime.
+              Coming soon. You&apos;ll be able to paste any OpenRouter,
+              Anthropic, or OpenAI key for unlimited jobs at direct cost.
+              Until then, pick a free model above.
             </p>
           </div>
         </motion.div>

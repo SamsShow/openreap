@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAccount, useConfig } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { SmartNav } from "@/components/SmartNav";
@@ -47,6 +47,7 @@ interface AgentData {
   model: string;
   skill_md: string;
   owner_id: string;
+  is_reap_agent?: boolean;
 }
 
 const findings = [
@@ -111,6 +112,7 @@ curl -sS -X POST ${endpoint} \\
 
 export default function AgentProfilePage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params.id as string;
 
   const [agent, setAgent] = useState<AgentData | null>(null);
@@ -226,6 +228,13 @@ export default function AgentProfilePage() {
         }
         if (res.ok) {
           const data = await res.json();
+          // First-party Reap agents have their own dedicated page with a
+          // swap-specific UI and no hire fee — route users there instead of
+          // the generic LLM-agent profile.
+          if (data.agent?.is_reap_agent) {
+            router.replace("/reap-agents");
+            return;
+          }
           setAgent(data.agent);
         }
       } catch (err) {
