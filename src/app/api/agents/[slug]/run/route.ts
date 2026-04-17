@@ -131,17 +131,43 @@ export async function POST(
     }
   }
 
-  // Step 7 — LLM call
+  // Step 7 — LLM call. One silent retry on transient errors (OpenRouter
+  // occasionally returns 5xx / 429 during traffic spikes) before we give up.
   let llmResult;
-  try {
-    llmResult = await callLLM(
-      agent.system_prompt,
-      input,
-      agent.model as ModelKey
-    );
-  } catch {
+  let llmErr: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      llmResult = await callLLM(
+        agent.system_prompt,
+        input,
+        agent.model as ModelKey
+      );
+      llmErr = null;
+      break;
+    } catch (err) {
+      llmErr = err;
+      // Only retry if it looks like a transient OpenRouter error.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/rate|429|5\d\d|timeout|ECONN|network/i.test(msg)) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  if (!llmResult) {
+    const rawMsg =
+      llmErr instanceof Error ? llmErr.message : String(llmErr ?? "unknown");
+    console.error("[agent-run] LLM call failed:", rawMsg);
+    // Return a trimmed, safe reason string. Truncate hard so we never leak
+    // full stack traces or auth headers back to the client.
+    const reason = rawMsg.slice(0, 240);
     return NextResponse.json(
-      { error: "service_unavailable" },
+      {
+        error: "service_unavailable",
+        reason,
+        model: agent.model,
+        hint:
+          "The LLM provider rejected the call. This usually clears on retry. If it keeps failing, the agent's model setting may be invalid — update it in Settings → Model.",
+      },
       { status: 503 }
     );
   }

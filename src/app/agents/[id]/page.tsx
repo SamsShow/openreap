@@ -224,6 +224,27 @@ export default function AgentProfilePage() {
             }
           );
         }
+        // Payment settled but the LLM provider (OpenRouter) rejected the
+        // call. x402 is non-refundable, so be honest with the user.
+        if (data.error === "service_unavailable") {
+          throw new X402ClientError(
+            "agent_error",
+            "Agent couldn't complete the job",
+            `The payment settled on-chain but the LLM provider (${
+              (data.model as string) || "upstream"
+            }) rejected the call. ${
+              (data.hint as string) ??
+              "Retry — most failures are transient."
+            }`,
+            {
+              hint:
+                typeof data.reason === "string"
+                  ? `Provider said: ${data.reason}`
+                  : undefined,
+              details: data,
+            }
+          );
+        }
         throw new X402ClientError(
           "facilitator_failed",
           "Agent rejected the payment",
