@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { SmartNav } from "@/components/SmartNav";
 import { Erc8004Badge } from "@/components/Erc8004Badge";
+import { CategoryIcon } from "@/components/CategoryIcon";
 
 const categories = [
   "All Categories",
@@ -321,7 +322,10 @@ export default function MarketplacePage() {
                       {/* Top Section */}
                       <div className="p-6">
                         <div className="flex items-center gap-3 mb-1">
-                          <div className="w-10 h-10 rounded-xl bg-surface flex-shrink-0" />
+                          <CategoryIcon
+                            category={agent.category}
+                            className="w-10 h-10"
+                          />
                           <h3 className="font-heading font-bold text-[17px] text-cream truncate">
                             {agent.name}
                           </h3>

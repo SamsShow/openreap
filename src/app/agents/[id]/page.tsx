@@ -8,6 +8,7 @@ import { SmartNav } from "@/components/SmartNav";
 import { ErrorCard } from "@/components/ErrorCard";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Erc8004Badge } from "@/components/Erc8004Badge";
+import { CategoryIcon } from "@/components/CategoryIcon";
 import { motion } from "framer-motion";
 import { signX402Payment } from "@/lib/x402-client";
 import {
@@ -291,42 +292,11 @@ export default function AgentProfilePage() {
         className="px-16 py-10 max-w-[1312px] mx-auto flex items-start gap-6"
       >
         {/* Icon */}
-        <div className="w-20 h-20 rounded-2xl bg-surface flex items-center justify-center flex-shrink-0">
-          <svg
-            width="36"
-            height="36"
-            viewBox="0 0 36 36"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M9 4.5H22.5L28.5 10.5V31.5H9C7.34315 31.5 6 30.1569 6 28.5V7.5C6 5.84315 7.34315 4.5 9 4.5Z"
-              stroke="#C8553D"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M22.5 4.5V10.5H28.5"
-              stroke="#C8553D"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M12 18H24"
-              stroke="#C8553D"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M12 23H20"
-              stroke="#C8553D"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </div>
+        <CategoryIcon
+          category={agent.category}
+          size={36}
+          className="w-20 h-20 rounded-2xl"
+        />
 
         {/* Info Column */}
         <div className="flex-1">
