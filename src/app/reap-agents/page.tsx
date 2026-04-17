@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useAccount, useConfig } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { SmartNav } from "@/components/SmartNav";
 import { ErrorCard } from "@/components/ErrorCard";
 import { CodeBlock } from "@/components/CodeBlock";
@@ -90,6 +90,7 @@ export default function ReapAgentsPage() {
 
   const { address, isConnected } = useAccount();
   const wagmiConfig = useConfig();
+  const { openConnectModal } = useConnectModal();
 
   async function handleSwap() {
     if (!isConnected || !address) {
@@ -288,8 +289,10 @@ export default function ReapAgentsPage() {
               </div>
 
               <button
-                onClick={handleSwap}
-                disabled={loading || !amount || !isConnected}
+                onClick={
+                  !isConnected ? () => openConnectModal?.() : handleSwap
+                }
+                disabled={loading || !amount}
                 className="w-full py-3 rounded-full bg-terracotta text-[15px] font-medium text-off-white shadow-[0_0_24px_#C8553D4D] hover:shadow-[0_0_32px_#C8553D66] transition-shadow disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {loading

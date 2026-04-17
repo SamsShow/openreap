@@ -11,6 +11,7 @@ export type X402ErrorKind =
   | "user_rejected"
   | "wrong_network"
   | "wallet_not_connected"
+  | "wallet_unauthorized"
   | "elsa_unreachable"
   | "elsa_rejected"
   | "facilitator_failed"
@@ -107,6 +108,27 @@ export function classifySignError(err: unknown): X402ClientError {
   const msg = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : "";
   const lower = msg.toLowerCase();
+
+  // EIP-1193 code 4100 — "The requested method and/or account has not been
+  // authorized by the user." Fires when the wallet connection went stale
+  // mid-flow (often after a chain switch) or the user revoked the dapp's
+  // permission in the wallet.
+  if (
+    lower.includes("not been authorized by the user") ||
+    lower.includes("has not been authorized") ||
+    lower.includes("unauthorized")
+  ) {
+    return new X402ClientError(
+      "wallet_unauthorized",
+      "Wallet permission lost",
+      "Your wallet no longer has permission to sign for this site. Disconnect and reconnect, then try again.",
+      {
+        hint:
+          "This often happens after a network switch. Click the wallet button to reconnect, then retry.",
+        details: msg,
+      }
+    );
+  }
 
   if (
     name === "UserRejectedRequestError" ||

@@ -17,6 +17,7 @@ const ICONS: Record<X402ErrorKind, string> = {
   user_rejected: "×",
   wrong_network: "⇄",
   wallet_not_connected: "○",
+  wallet_unauthorized: "⚠",
   elsa_unreachable: "!",
   elsa_rejected: "!",
   facilitator_failed: "!",
