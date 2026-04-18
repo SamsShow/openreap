@@ -142,7 +142,13 @@ async function callInhouseLLM(
     clearTimeout(timeout);
   }
 
-  if (!res.ok) throw new Error(`inhouse HTTP ${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    console.warn(
+      `[inhouse] ${res.status} from ${url} (model=${process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID}); body: ${errBody.slice(0, 200)}`
+    );
+    throw new Error(`inhouse HTTP ${res.status}`);
+  }
 
   const body = (await res.json()) as InhouseResponse;
   const latency_ms = Date.now() - startMs;
@@ -189,8 +195,16 @@ async function callInhouseLLMWithRetry(
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
+      const name = err instanceof Error ? err.name : "";
+
       // Deterministic failures — don't burn retries.
+      //  - 4xx from the upstream: server-side bug
+      //  - AbortError / "This operation was aborted": we hit our own
+      //    timeout, which means the server already accepted the request
+      //    and is probably still working on it. Retrying piles another
+      //    request onto the same queue, compounding the jam.
       if (/inhouse HTTP 4\d\d/.test(msg)) throw err;
+      if (name === "AbortError" || /aborted/i.test(msg)) throw err;
 
       if (attempt < INHOUSE_MAX_ATTEMPTS - 1) {
         const backoff = INHOUSE_BASE_BACKOFF_MS * Math.pow(3, attempt);
