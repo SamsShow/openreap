@@ -28,13 +28,17 @@ const openrouter = new OpenAI({
 
 export type ModelKey = string;
 
-const DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
+// OpenRouter's free tier is thinning out — llama-3.1-8b:free, mistral-7b:free,
+// gemma-2-9b:free, and gemini-2.0-flash-exp:free all 404 now. Stick to the
+// models that still resolve (llama-3.2-3b:free, llama-3.3-70b:free). The
+// in-house path covers free-tier normally; OpenRouter is only the fallback
+// when the local server is unreachable, and rate limiting there is fine.
+const DEFAULT_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 
 const FRIENDLY_ALIASES: Record<string, string> = {
   inhouse: DEFAULT_MODEL,
   "openrouter-free": DEFAULT_MODEL,
-  "mistral-7b": "mistralai/mistral-7b-instruct:free",
-  "gemma-2-9b": "google/gemma-2-9b-it:free",
+  "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct:free",
   "claude-haiku": "anthropic/claude-3.5-haiku",
   "gpt-4o-mini": "openai/gpt-4o-mini",
   // Defensive aliases for a few values we've seen in the wild
@@ -44,10 +48,8 @@ const FRIENDLY_ALIASES: Record<string, string> = {
 };
 
 const COST_PER_TOKEN: Record<string, number> = {
-  "meta-llama/llama-3.1-8b-instruct:free": 0,
-  "meta-llama/llama-3.1-8b-instruct": 0.00000006,
-  "mistralai/mistral-7b-instruct:free": 0,
-  "google/gemma-2-9b-it:free": 0,
+  "meta-llama/llama-3.2-3b-instruct:free": 0,
+  "meta-llama/llama-3.3-70b-instruct:free": 0,
   "anthropic/claude-3.5-haiku": 0.0000008,
   "openai/gpt-4o-mini": 0.0000006,
 };
@@ -123,7 +125,12 @@ async function callInhouseLLM(
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // ngrok's free tier serves an HTML browser-warning page on every
+        // request without this header. Harmless on other hosts.
+        "ngrok-skip-browser-warning": "true",
+      },
       body: JSON.stringify({
         model: process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID,
         system_prompt: systemPrompt,
