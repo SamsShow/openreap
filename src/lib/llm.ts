@@ -83,7 +83,7 @@ export interface LLMResult {
 // In-house LLM (Qwen 3.5 4B served from INHOUSE_LLM_URL)
 // ---------------------------------------------------------------------------
 
-const INHOUSE_MODEL_ID = "qwen3.5-4b";
+const INHOUSE_DEFAULT_MODEL_ID = "llama-3.2-3b-instruct";
 const INHOUSE_REQUEST_TIMEOUT_MS = 20_000;
 const INHOUSE_MAX_ATTEMPTS = 3;
 const INHOUSE_BASE_BACKOFF_MS = 300;
@@ -116,7 +116,7 @@ async function callInhouseLLM(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: INHOUSE_MODEL_ID,
+        model: process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID,
         system_prompt: systemPrompt,
         input: userInput,
       }),
@@ -138,9 +138,15 @@ async function callInhouseLLM(
     .find((o) => o.type === "message");
   const raw = (message?.content ?? "").trim();
 
+  // LM Studio has no json-object response_format like OpenAI does, so
+  // instruct-tuned models often wrap JSON in ```json ... ``` fences. Strip
+  // those before parsing.
+  const fenced = raw.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  const jsonCandidate = fenced ? fenced[1].trim() : raw;
+
   let content: object;
   try {
-    content = JSON.parse(raw) as object;
+    content = JSON.parse(jsonCandidate) as object;
   } catch {
     content = { error: "output_invalid", raw };
   }

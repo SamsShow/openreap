@@ -21,7 +21,8 @@ if (!INHOUSE_URL) {
   process.exit(1);
 }
 
-const INHOUSE_MODEL_ID = "qwen3.5-4b";
+const INHOUSE_MODEL_ID =
+  process.env.INHOUSE_LLM_MODEL || "llama-3.2-3b-instruct";
 
 async function probe({ name, system, input, schema }) {
   process.stdout.write(`\n▶ ${name}\n  model: ${INHOUSE_MODEL_ID}\n  `);
@@ -52,9 +53,11 @@ async function probe({ name, system, input, schema }) {
       return false;
     }
     const raw = (message.content ?? "").trim();
+    const fenced = raw.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+    const candidate = fenced ? fenced[1].trim() : raw;
     let parsed;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(candidate);
     } catch {
       console.log(`✗ message content is not valid JSON`);
       console.log(`    ${raw.slice(0, 200)}`);
