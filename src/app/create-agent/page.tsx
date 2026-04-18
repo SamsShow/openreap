@@ -179,7 +179,7 @@ function CreateAgentInner() {
     }
   }
 
-  const modelLabel = parsed?.meta.model_tier === "pro" ? "Claude Haiku 3.5 (pro)" : "In-House Qwen 3.5 4B (free)";
+  const modelLabel = parsed?.meta.model_tier === "pro" ? "Claude Haiku 3.5 (pro)" : "In-House (free)";
 
   return (
     <div className="min-h-screen bg-bg">

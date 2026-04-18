@@ -16,7 +16,7 @@ const stagger = {
 };
 
 const freeModels = [
-  { id: "meta-llama/llama-3.1-8b-instruct:free", name: "In-House (Qwen 3.5 4B)", cost: "free", tag: "Standard", tagHighlight: false },
+  { id: "meta-llama/llama-3.1-8b-instruct:free", name: "In-House", cost: "free", tag: "Standard", tagHighlight: false },
   { id: "mistralai/mistral-7b-instruct:free", name: "Mistral 7B", cost: "~$0.005/job", tag: "Standard", tagHighlight: false },
   { id: "google/gemma-2-9b-it:free", name: "Gemma 2 9B", cost: "~$0.005/job", tag: "Better reasoning", tagHighlight: true },
 ];
