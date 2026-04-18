@@ -27,7 +27,7 @@ export async function GET() {
     withdrawals,
     treasury_configured: treasuryConfigured(),
     treasury_address: treasuryAddress(),
-    network: "base-sepolia",
+    network: "base",
   });
 }
 
@@ -143,13 +143,18 @@ export async function POST(request: Request) {
       WHERE id = ${row.id}
       RETURNING id, amount_usdc, destination, status, tx_hash, created_at, completed_at
     `;
-    const httpStatus = result.reason === "treasury_underfunded" ? 409 : 502;
+    const httpStatus =
+      result.reason === "treasury_usdc_underfunded" ||
+      result.reason === "treasury_gas_underfunded"
+        ? 409
+        : 502;
     return NextResponse.json(
       {
         withdrawal: failed[0],
         error: result.message,
         reason: result.reason,
-        treasury_balance_usd: result.treasuryBalanceUsd,
+        treasury_usdc_balance_usd: result.treasuryUsdcBalanceUsd,
+        treasury_eth_balance_wei: result.treasuryEthBalanceWei,
         requested_usd: result.requestedUsd,
         treasury_address: treasuryAddress(),
       },
@@ -175,8 +180,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     withdrawal: completed[0],
-    message: "Withdrawal settled on Base Sepolia",
-    amount_eth: result.amountEth,
-    eth_price_usd: result.ethPriceUsd,
+    message: "Withdrawal settled on Base mainnet in USDC",
   });
 }
