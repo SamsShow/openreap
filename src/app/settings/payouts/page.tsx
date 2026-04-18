@@ -190,20 +190,33 @@ export default function PayoutsPage() {
       const data = await res.json();
 
       if (!res.ok && res.status !== 202) {
-        if (data.reason === "treasury_underfunded") {
+        if (data.reason === "treasury_usdc_underfunded") {
           const have =
-            typeof data.treasury_balance_usd === "number"
-              ? data.treasury_balance_usd
+            typeof data.treasury_usdc_balance_usd === "number"
+              ? data.treasury_usdc_balance_usd
               : null;
           throw new X402ClientError(
             "agent_error",
-            "Treasury is underfunded",
+            "Treasury USDC underfunded",
             have !== null
-              ? `The Reap treasury only has the equivalent of $${have.toFixed(2)} in Sepolia ETH but you tried to withdraw $${amt.toFixed(2)}. Fund the treasury and try again.`
-              : `The Reap treasury doesn't hold enough Sepolia ETH for this withdrawal.`,
+              ? `The Reap treasury only holds $${have.toFixed(2)} USDC on Base mainnet but you tried to withdraw $${amt.toFixed(2)}. Fund the treasury with USDC and try again.`
+              : `The Reap treasury doesn't hold enough USDC on Base mainnet for this withdrawal.`,
             {
               hint: data.treasury_address
-                ? `Fund this wallet with Sepolia ETH: ${data.treasury_address}`
+                ? `Fund this wallet with USDC on Base mainnet: ${data.treasury_address}`
+                : undefined,
+              details: data,
+            }
+          );
+        }
+        if (data.reason === "treasury_gas_underfunded") {
+          throw new X402ClientError(
+            "agent_error",
+            "Treasury out of gas",
+            `The treasury has USDC but not enough ETH on Base mainnet to pay the gas for this transfer. Top it up with a small ETH float.`,
+            {
+              hint: data.treasury_address
+                ? `Send a small amount of ETH on Base mainnet to: ${data.treasury_address}`
                 : undefined,
               details: data,
             }
@@ -223,7 +236,7 @@ export default function PayoutsPage() {
         res.status === 202
           ? data.message ||
               "Withdrawal queued for manual processing."
-          : data.message || "Withdrawal settled on Base Sepolia."
+          : data.message || "Withdrawal settled on Base mainnet in USDC."
       );
       await refresh();
     } catch (err) {
@@ -254,7 +267,7 @@ export default function PayoutsPage() {
             </h1>
             <p className="text-sm text-muted mt-1">
               Earnings from hired agents accrue as USD value. Withdrawals are
-              paid out as Base Sepolia ETH at the current spot price.
+              paid out as USDC on Base mainnet.
             </p>
           </div>
           <ConnectButton
@@ -330,7 +343,7 @@ export default function PayoutsPage() {
             <p className="font-heading font-bold text-[32px] text-cream mt-1">
               {formatUsdc(lifetime)}
             </p>
-            <p className="text-xs text-muted mt-1">Via Elsa x402 on Base Sepolia</p>
+            <p className="text-xs text-muted mt-1">Via Elsa x402 on Base mainnet</p>
           </motion.div>
         </motion.div>
 
@@ -344,9 +357,9 @@ export default function PayoutsPage() {
                 Withdraw
               </h2>
               <p className="text-sm text-muted mt-1">
-                Reap treasury sends Sepolia ETH equal to the USD amount at the
-                current ETH/USD spot price. Only a connected wallet on Base
-                Sepolia is needed.
+                Reap treasury sends USDC on Base mainnet equal to the USD
+                amount. A connected wallet on Base mainnet is the destination;
+                no extra funding is required on your side.
               </p>
             </div>
             {user?.wallet_address ? (
@@ -481,7 +494,7 @@ export default function PayoutsPage() {
                   </span>
                   {w.tx_hash ? (
                     <a
-                      href={`https://sepolia.basescan.org/tx/${w.tx_hash}`}
+                      href={`https://basescan.org/tx/${w.tx_hash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-terracotta hover:underline flex-shrink-0"
