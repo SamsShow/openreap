@@ -135,6 +135,10 @@ async function callInhouseLLM(
         model: process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID,
         system_prompt: systemPrompt,
         input: userInput,
+        // LM Studio's /api/v1/chat defaults to a modest cap; structured
+        // JSON outputs routinely exceed that and truncate mid-field. Give
+        // it room to finish — OpenRouter path already uses 2048.
+        max_tokens: 2048,
       }),
       signal: controller.signal,
     });

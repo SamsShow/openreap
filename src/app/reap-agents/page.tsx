@@ -576,8 +576,11 @@ curl -sS -X POST ${endpoint} \\
 type RoastOutput = {
   verdict?: string;
   roast?: string;
-  sins?: Array<{ snippet: string; sin: string }>;
+  sins?: Array<{ snippet?: string; sin?: string } | string>;
   redemption?: string;
+  // Set by callLLM when the model returned non-JSON (or truncated JSON).
+  error?: string;
+  raw?: string;
 };
 
 type RoastResponse = {
@@ -811,14 +814,33 @@ function CodeRoasterCard() {
             ) : null}
             {result && result.output && (
               <div className="flex flex-col gap-4">
-                <div>
-                  <p className="text-xs text-muted uppercase tracking-wider">
-                    Verdict
-                  </p>
-                  <p className="text-lg font-heading font-bold text-cream mt-1">
-                    {result.output.verdict ?? "—"}
-                  </p>
-                </div>
+                {result.output.error === "output_invalid" && (
+                  <div className="rounded-xl bg-terracotta/10 border border-terracotta/30 p-4">
+                    <p className="text-xs uppercase tracking-wider text-terracotta">
+                      Model output couldn&apos;t be parsed
+                    </p>
+                    <p className="text-sm text-cream mt-1">
+                      The LLM returned something that wasn&apos;t valid JSON —
+                      usually a truncated response or a non-JSON preamble. Raw
+                      output below.
+                    </p>
+                    {result.output.raw && (
+                      <pre className="whitespace-pre-wrap break-all font-mono text-[12px] text-cream mt-3 bg-bg p-3 rounded-lg">
+                        {result.output.raw}
+                      </pre>
+                    )}
+                  </div>
+                )}
+                {result.output.verdict && (
+                  <div>
+                    <p className="text-xs text-muted uppercase tracking-wider">
+                      Verdict
+                    </p>
+                    <p className="text-lg font-heading font-bold text-cream mt-1">
+                      {result.output.verdict}
+                    </p>
+                  </div>
+                )}
                 {result.output.roast && (
                   <div>
                     <p className="text-xs text-muted uppercase tracking-wider">
@@ -836,17 +858,31 @@ function CodeRoasterCard() {
                         Sins
                       </p>
                       <ul className="flex flex-col gap-2 mt-2">
-                        {result.output.sins.map((s, i) => (
-                          <li
-                            key={i}
-                            className="rounded-xl bg-bg p-3 text-sm"
-                          >
-                            <pre className="whitespace-pre-wrap break-all font-mono text-[12px] text-terracotta">
-                              {s.snippet}
-                            </pre>
-                            <p className="text-cream mt-2">{s.sin}</p>
-                          </li>
-                        ))}
+                        {result.output.sins.map((s, i) => {
+                          // Llama sometimes returns sins as plain strings
+                          // instead of {snippet, sin} objects — render both.
+                          const snippet =
+                            typeof s === "string" ? "" : s.snippet ?? "";
+                          const sinText =
+                            typeof s === "string" ? s : s.sin ?? "";
+                          return (
+                            <li
+                              key={i}
+                              className="rounded-xl bg-bg p-3 text-sm"
+                            >
+                              {snippet && (
+                                <pre className="whitespace-pre-wrap break-all font-mono text-[12px] text-terracotta">
+                                  {snippet}
+                                </pre>
+                              )}
+                              <p
+                                className={`text-cream ${snippet ? "mt-2" : ""}`}
+                              >
+                                {sinText}
+                              </p>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
