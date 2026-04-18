@@ -1,12 +1,12 @@
 # Base Mainnet USDC + Elsa x402 Facilitator Migration
 
 **Date:** 2026-04-18
-**Status:** Design — pending review before planning
+**Status:** Design — approved; open questions resolved (see §10)
 **Supersedes for chain targeting:** `docs/superpowers/specs/2026-04-17-track3-base-auto-trader-design.md` (the auto-trader flow itself is unchanged; only its chain metadata moves)
 
 ## 1. Goal
 
-Move OpenReap's payment layer from Base Sepolia testnet to **Base mainnet** end-to-end with real USDC, and replace the x402 facilitator from `x402.org/facilitator` with Elsa's drop-in `facilitator.heyelsa.build`. Creator withdrawals switch from Sepolia-ETH-valued-at-USD to direct mainnet USDC ERC-20 transfers.
+Move OpenReap's payment layer from Base Sepolia testnet to **Base mainnet** end-to-end with real USDC, and replace the x402 facilitator from `x402.org/facilitator` with Elsa's drop-in `facilitator.heyelsa.build`. Creator withdrawals switch from Sepolia-ETH-valued-at-USD to direct mainnet USDC ERC-20 transfers. A dev-only `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` env flag keeps Sepolia reachable for local development; production default is mainnet-only.
 
 ## 2. Non-goals
 
@@ -33,7 +33,7 @@ Pulled from Elsa's docs (`x402.heyelsa.ai`) and `docs.x402.org`:
 
 ### 5.1 `src/lib/chains.ts`
 
-Remove all Sepolia exports. Final shape:
+Keep minimal Sepolia exports gated behind a dev-only env flag. Final shape:
 
 ```ts
 export const BASE_MAINNET_CHAIN_ID = 8453;
@@ -41,7 +41,7 @@ export const USDC_BASE_MAINNET = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as
 
 export const REAP_TREASURY =
   (process.env.NEXT_PUBLIC_REAP_TREASURY as `0x${string}` | undefined) ||
-  "0x0000000000000000000000000000000000000000"; // placeholder — must be set before launch
+  "0x5f7711d3Fb58115DAD79DB7b7e0728b5F009a036"; // team-controlled mainnet wallet
 
 export const X402_FACILITATOR_URL =
   process.env.NEXT_PUBLIC_X402_FACILITATOR ||
@@ -53,30 +53,47 @@ export const ELSA_X402_BASE_URL =
 export const BASE_MAINNET_RPC = "https://mainnet.base.org";
 ```
 
-The prior hardcoded `REAP_TREASURY` fallback (`0x5f7711d3Fb58115DAD79DB7b7e0728b5F009a036`) is dropped — it was a Sepolia convenience. Mainnet requires an explicit `NEXT_PUBLIC_REAP_TREASURY` env var; the zero-address default is intentionally obvious so missing config fails loudly.
+The hardcoded `REAP_TREASURY` fallback is kept (same address as today) — confirmed by the reviewer as a team-controlled mainnet wallet. `NEXT_PUBLIC_REAP_TREASURY` can still override it per-env.
+
+**Sepolia dev-fallback flag.** An env-only escape hatch — off by default, for local development only:
+
+```ts
+export const ENABLE_SEPOLIA_FALLBACK =
+  process.env.NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK === "1";
+
+// Only referenced when the flag is on:
+export const BASE_SEPOLIA_CHAIN_ID = 84532;
+export const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
+export const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
+```
+
+When the flag is **off** (production default), only mainnet constants are used anywhere downstream. When **on**, the hire flow advertises both networks in its 402 envelope (see §5.3). The withdrawal/treasury path is unaffected by the flag — it is always mainnet USDC, because the balance ledger is USD-denominated and the team is not going to pay out from a Sepolia treasury.
 
 ### 5.2 `src/lib/x402-client.ts` (browser signer)
 
-- `PaymentRequirements.network` narrows from `"base-sepolia" | "base"` to `"base"`.
-- `chainIdForNetwork` collapses to a constant returning `BASE_MAINNET_CHAIN_ID`.
-- `defaultAssetForNetwork` collapses to a constant returning `USDC_BASE_MAINNET`.
-- Pre-flight balance-check error copy drops the Sepolia faucet hint. The `networkLabel` and `faucetHint` branch is removed; message reads: "Fund your wallet with USDC on Base mainnet. The token contract is `${verifyingContract}` — any other 'USDC' won't work."
+- `PaymentRequirements.network` stays `"base-sepolia" | "base"` — the union is still valid because the facilitator supports both, and the server will only ever emit `"base-sepolia"` when the dev fallback is on. Runtime behavior for production is identical to narrowing it.
+- `chainIdForNetwork` and `defaultAssetForNetwork` keep their branching shape but now mainnet is the only default path; sepolia branches only trigger when the server advertised sepolia (i.e., fallback was on).
+- Pre-flight balance-check error copy: the Sepolia faucet hint is preserved but only reachable when `requirements.network === "base-sepolia"`. The mainnet branch gets simplified copy: "Fund your wallet with USDC on Base mainnet. The token contract is `${verifyingContract}` — any other 'USDC' won't work."
 - No change to the EIP-3009 signing logic.
 
 ### 5.3 `src/lib/elsa.ts` (facilitator client — despite the name)
 
-- `PaymentRequirements.network` narrows to `"base"`.
-- `buildRequirements` emits `network: "base"` and `asset: USDC_BASE_MAINNET`.
+- `PaymentRequirements.network` stays `"base-sepolia" | "base"`.
+- `buildRequirements(...)` returns a mainnet requirement (`network: "base"`, `asset: USDC_BASE_MAINNET`) by default. When `ENABLE_SEPOLIA_FALLBACK` is true, a second helper `buildSepoliaRequirements(...)` returns the equivalent Sepolia requirement.
+- `getPaymentDetails(...)` returns an envelope whose `accepts` array contains **mainnet only** in production, or **[mainnet, sepolia]** when the fallback flag is on. x402 v1's multi-requirement `accepts` is the clean way to let the client pick based on the user's wallet chain.
+- `requirementsFor(...)` is replaced with `requirementsForNetwork(agentName, slug, price, network)` so the server can select the right requirement object based on what the payer actually signed (see §5.10 below).
 - `verifyPayment` continues to POST `{ x402Version: 1, paymentPayload, paymentRequirements }` to `${X402_FACILITATOR_URL}/settle`. With the new default URL this now hits Elsa's facilitator. Response parsing is unchanged.
 - File keeps its name. "Elsa" is finally accurate — Elsa is both the default facilitator (hire flow) and the merchant (auto-trader flow).
 
 ### 5.4 `src/lib/wagmi.ts`
 
 ```ts
-chains: [base, mainnet]
+const chains = ENABLE_SEPOLIA_FALLBACK
+  ? [base, baseSepolia, mainnet]
+  : [base, mainnet];
 ```
 
-Drop `baseSepolia`. Users on Sepolia will see the normal `switchChain` prompt to move to Base mainnet.
+Production default drops `baseSepolia`; dev fallback keeps it. Users on the wrong chain will see the normal `switchChain` prompt.
 
 ### 5.5 `src/lib/payouts.ts` — rewritten for mainnet USDC
 
@@ -106,15 +123,20 @@ Meaningful behavior change: creators now receive **USDC ERC-20 transfers** on Ba
 
 Line 148: `chain: "base-sepolia"` → `"base"`. That's the only touch; the Elsa merchant-API proof-of-work logic is independent of this migration.
 
+### 5.7.1 `src/app/api/agents/[slug]/run/route.ts`
+
+- Call the new `getPaymentDetails(...)` (mainnet-only in production, dual-network when fallback is on) for the initial 402 response.
+- On payment-header receipt, parse the base64 payload to read `payload.network` and call `requirementsForNetwork(agent.name, agent.slug, priceUsdc, network)` to pick the matching requirement before passing it to `verifyPayment`. Reject any `network` string that isn't in the envelope's allowed set.
+
 ### 5.8 `src/app/agents/[id]/page.tsx`
 
 Line 106: the documentation comment block showing `"network":"base-sepolia"` updates to `"network":"base"`. Display-only.
 
 ### 5.9 Ancillary
 
-- `.env.example`: update the `REAP_SAFE_ADDRESS` / `NEXT_PUBLIC_REAP_TREASURY` comment to state these control **mainnet** USDC. `REAP_TREASURY_PRIVATE_KEY` comment updates to "Mainnet Base. Must hold both USDC (for payouts) and a small ETH float (for gas). Leave empty to queue withdrawals as `pending_manual_review`." `NEXT_PUBLIC_X402_FACILITATOR` default comment notes Elsa as the new default.
-- `README.md:110`: remove the Alchemy Sepolia-faucet link. Replace with a one-line note that hires require real USDC on Base mainnet and that a small onramp (Coinbase / bridge) is the user's responsibility.
-- `scripts/seed-test-user.mjs`, `scripts/test-elsa-x402.mjs`, `scripts/test-agent-pipeline.mjs`: swap any `base-sepolia` / `84532` / `USDC_BASE_SEPOLIA` references to their mainnet equivalents. Each script gets a loud top-of-file comment: "This now moves real USDC on Base mainnet. Do not run against a production treasury by accident."
+- `.env.example`: update the `REAP_SAFE_ADDRESS` / `NEXT_PUBLIC_REAP_TREASURY` comment to state these control **mainnet** USDC. `REAP_TREASURY_PRIVATE_KEY` comment updates to "Mainnet Base. Must hold both USDC (for payouts) and a small ETH float (for gas). Leave empty to queue withdrawals as `pending_manual_review`." `NEXT_PUBLIC_X402_FACILITATOR` default comment notes Elsa as the new default. Add a new commented line: `# NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` with a note that it is for local development only and that the treasury/withdrawal path is always mainnet regardless.
+- `README.md:110`: replace the Alchemy Sepolia-faucet section with a two-paragraph note: (1) hires and the auto-trader require real USDC on Base mainnet — point users to Coinbase or a bridge; (2) developers who want to exercise the hire flow without spending real USDC can set `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` in `.env.local` and keep the Alchemy Sepolia-faucet link available at that level only.
+- `scripts/seed-test-user.mjs`, `scripts/test-elsa-x402.mjs`, `scripts/test-agent-pipeline.mjs`: default to mainnet constants. Each script respects `ENABLE_SEPOLIA_FALLBACK` and can be pointed at either network via the same env flag. Each script gets a loud top-of-file comment: "This moves real USDC on Base mainnet unless `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` is set. Do not run against a production treasury by accident."
 
 ## 6. Data flow (after migration)
 
@@ -138,15 +160,16 @@ Withdrawal path (creator → wallet):
 
 ## 7. Error handling
 
-- **User on Sepolia:** wagmi `switchChain` prompts to Base mainnet. With only two chains in `wagmi.ts` (`base`, `mainnet`), the prompt is unambiguous.
-- **Facilitator outage:** operator sets `NEXT_PUBLIC_X402_FACILITATOR=https://x402.org/facilitator` and redeploys. No code change required. README gets a one-liner mentioning this.
-- **Insufficient USDC at hire time:** client-side pre-flight already surfaces `insufficient_funds`; copy updates to drop the Sepolia faucet hint.
+- **User on wrong chain:** wagmi `switchChain` prompts the user. In production the target is unambiguous (Base mainnet); with the dev fallback on, both chains are valid and whichever the wallet is currently on is chosen.
+- **Facilitator outage:** operator sets `NEXT_PUBLIC_X402_FACILITATOR=https://x402.org/facilitator` and redeploys. The constant is read at module load, so a redeploy is required. README gets a one-liner mentioning this.
+- **Insufficient USDC at hire time:** client-side pre-flight surfaces `insufficient_funds` with network-appropriate copy (faucet hint on Sepolia, onramp hint on mainnet).
 - **Facilitator-vs-x402.org shape drift:** mitigated by a smoke test (see §8) asserting the `/settle` response shape on Elsa matches the `{ success, transaction, payer }` fields we parse.
+- **Payer signed a network the server didn't advertise:** server rejects the hire with a 402 + explicit `reason: "unsupported_network"`. Prevents a dev-fallback-off server accepting a Sepolia payload.
 
 ## 8. Testing
 
 - **Smoke test (new):** a small Node script that POSTs a deliberately invalid `paymentPayload` to `https://facilitator.heyelsa.build/verify` and asserts we get a structured error response with a recognizable shape. Runs in CI without a funded wallet. Catches Elsa schema drift.
-- **Local dev:** developers need a wallet with a few dollars of USDC on Base mainnet. There is no Sepolia fallback in this spec — see Open Question 1 if you want to reinstate one as an opt-in.
+- **Local dev:** developers run with `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` in `.env.local` and use the Circle Sepolia faucet. Without the flag, dev requires real USDC on Base mainnet.
 - **End-to-end manual checklist (before shipping):**
   1. Hire an agent with a wallet holding $0.50 USDC. Expect 200 + `tx_hash` on Base mainnet.
   2. Verify the `jobs.elsa_tx_hash` row matches the on-chain tx.
@@ -158,15 +181,15 @@ Withdrawal path (creator → wallet):
 
 These are **not** code but must be checked before this ships:
 
-- **Treasury address ownership:** the old hardcoded `0x5f7711d3Fb58115DAD79DB7b7e0728b5F009a036` default is removed in §5.1. Production deploy **must** set `NEXT_PUBLIC_REAP_TREASURY` to a wallet the team controls on Base mainnet, or every hire payment goes to the zero address and is unrecoverable.
+- **Treasury address ownership:** confirmed — `0x5f7711d3Fb58115DAD79DB7b7e0728b5F009a036` is a team-controlled mainnet wallet and remains the default. `NEXT_PUBLIC_REAP_TREASURY` can override per-env if needed.
 - **Treasury private key:** `REAP_TREASURY_PRIVATE_KEY` now controls real USDC. Treat it with production-secret discipline (vault, not `.env.local`).
 - **Canary withdrawal:** first withdrawal should be a `$1` canary from the team's own creator account to a team wallet before any external creator is allowed to withdraw.
 - **Treasury float:** treasury must be pre-funded with enough USDC to cover expected payout velocity plus a small ETH float (start: $2 in ETH is enough for hundreds of transfers).
 
-## 10. Open questions (reviewer: please resolve)
+## 10. Resolved questions
 
-1. **Dev affordance.** This spec removes Sepolia entirely. If developers should be able to run locally without real USDC, we can reinstate Sepolia as an **opt-in fallback** via `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1`. Default off. Say yes and I'll add it to the implementation plan; otherwise it stays deleted.
-2. **Treasury address.** Is `NEXT_PUBLIC_REAP_TREASURY` already set to a mainnet-controlled wallet in your deploy env? If not, this spec treats it as a launch blocker.
+1. **Dev affordance.** Resolved — add the opt-in `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` flag. Off by default in production; on in local dev. Treasury/withdrawal path is always mainnet regardless of the flag.
+2. **Treasury address.** Resolved — the existing `0x5f7711d3Fb58115DAD79DB7b7e0728b5F009a036` is a team-controlled mainnet wallet. Kept as the hardcoded default in §5.1.
 
 ---
 
