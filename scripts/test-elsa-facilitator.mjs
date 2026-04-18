@@ -4,12 +4,15 @@
  *   node scripts/test-elsa-facilitator.mjs
  *
  * Asserts that Elsa's facilitator at facilitator.heyelsa.build still exposes
- * the POST /verify endpoint with the response shape src/lib/elsa.ts's
- * verifyPayment() parses ({ success, errorReason? / error?, transaction? }).
+ * the POST /settle endpoint with the response shape src/lib/elsa.ts's
+ * verifyPayment() parses ({ success, transaction?, errorReason? / error? }).
+ * /settle is the endpoint production hits — /verify has a different schema
+ * that we intentionally don't consume.
  *
  * Uses a deliberately-invalid paymentPayload so no real USDC moves. The test
- * passes when the facilitator responds with a structured JSON failure — what
- * we need to keep our verify/settle plumbing working.
+ * passes when the facilitator responds with a structured JSON failure
+ * containing a boolean `success` and a machine-readable reason string — the
+ * exact fields verifyPayment() reads.
  */
 
 const FACILITATOR =
@@ -48,8 +51,8 @@ const bogusPayload = {
   },
 };
 
-console.log(`▶ POST ${FACILITATOR}/verify`);
-const res = await fetch(`${FACILITATOR}/verify`, {
+console.log(`▶ POST ${FACILITATOR}/settle`);
+const res = await fetch(`${FACILITATOR}/settle`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
