@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import {
   getPaymentDetails,
-  requirementsFor,
+  requirementsForNetwork,
   verifyPayment,
 } from "@/lib/elsa";
 import { callLLM } from "@/lib/llm";
@@ -53,8 +53,45 @@ export async function POST(
     );
   }
 
-  // Step 2 — Verify payment
-  const requirements = requirementsFor(agent.name, agent.slug, priceUsdc);
+  // Step 2 — Decode the payload, pick the matching requirements, verify.
+  let signedNetwork: string;
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(paymentHeader, "base64").toString("utf-8")
+    ) as { network?: unknown };
+    if (typeof decoded.network !== "string") {
+      throw new Error("payload missing network");
+    }
+    signedNetwork = decoded.network;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const reason =
+      msg === "payload missing network"
+        ? "x-payment payload is missing the network field"
+        : `x-payment header is not valid base64 JSON: ${msg}`;
+    return NextResponse.json(
+      { error: "Payment verification failed", reason },
+      { status: 402 }
+    );
+  }
+
+  const requirements = requirementsForNetwork(
+    agent.name,
+    agent.slug,
+    priceUsdc,
+    signedNetwork
+  );
+  if (!requirements) {
+    return NextResponse.json(
+      {
+        error: "Payment verification failed",
+        reason: "unsupported_network",
+        network: signedNetwork,
+      },
+      { status: 402 }
+    );
+  }
+
   const verified = await verifyPayment(paymentHeader, requirements);
   if (!verified.ok) {
     return NextResponse.json(

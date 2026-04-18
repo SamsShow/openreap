@@ -130,7 +130,7 @@ async function run() {
     // 0–24h — recent activity so dashboard "Jobs last 24h" isn't 0
     { agentIdx: 0, input: "NDA review — Acme Corp SaaS agreement", status: "completed", minutesAgo: 45 },
     { agentIdx: 1, input: "Python auth middleware review, watch for JWT expiry handling", status: "completed", minutesAgo: 120 },
-    { agentIdx: 2, input: "Blog post: 'Why Base Sepolia for dev demos' — 1000 words", status: "completed", minutesAgo: 180 },
+    { agentIdx: 2, input: "Blog post: 'Why Base mainnet USDC for agent hires' — 1000 words", status: "completed", minutesAgo: 180 },
     { agentIdx: 0, input: "Joint venture agreement — liability clause exceeds $100K threshold", status: "escalated", minutesAgo: 240 },
     { agentIdx: 1, input: "Review Solana smart contract for reentrancy", status: "completed", minutesAgo: 420 },
     { agentIdx: 2, input: "SEO brief: '10 best Next.js libraries 2026'", status: "completed", minutesAgo: 600 },
@@ -224,8 +224,8 @@ async function run() {
   }
 
   // 7. Seed the balance row. Available is capped at $5 so the demo withdraw
-  // fits comfortably within a Circle Sepolia faucet drip; lifetime_earned
-  // reflects the full $78 for realism in the dashboard cards.
+  // is a cheap canary on mainnet USDC (or Sepolia when the dev fallback flag
+  // is on); lifetime_earned reflects the full $78 for realism in the cards.
   const totalEarnedUsdc = (totalEarnedCents / 100).toFixed(2);
   const availableDemoUsdc = "5.00";
   await sql`

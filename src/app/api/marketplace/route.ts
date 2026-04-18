@@ -7,15 +7,25 @@ export async function GET(request: NextRequest) {
   const sort = searchParams.get("sort") || "popular";
   const search = searchParams.get("search");
   const minReputation = searchParams.get("min_reputation");
+  const includeReap = searchParams.get("include_reap") === "true";
 
-  const rows = await sql`
-    SELECT a.id, a.slug, a.name, a.description, a.category, a.price_cents,
-           a.jobs_completed, a.reputation_score, a.avg_rating, a.is_live,
-           u.display_name AS creator_name
-    FROM agents a
-    JOIN users u ON a.owner_id = u.id
-    WHERE a.is_live = true AND COALESCE(a.is_reap_agent, false) = false
-  `;
+  const rows = includeReap
+    ? await sql`
+        SELECT a.id, a.slug, a.name, a.description, a.category, a.price_cents,
+               a.jobs_completed, a.reputation_score, a.avg_rating, a.is_live,
+               a.is_reap_agent, u.display_name AS creator_name
+        FROM agents a
+        JOIN users u ON a.owner_id = u.id
+        WHERE a.is_live = true
+      `
+    : await sql`
+        SELECT a.id, a.slug, a.name, a.description, a.category, a.price_cents,
+               a.jobs_completed, a.reputation_score, a.avg_rating, a.is_live,
+               a.is_reap_agent, u.display_name AS creator_name
+        FROM agents a
+        JOIN users u ON a.owner_id = u.id
+        WHERE a.is_live = true AND COALESCE(a.is_reap_agent, false) = false
+      `;
 
   let agents = rows as Record<string, unknown>[];
 

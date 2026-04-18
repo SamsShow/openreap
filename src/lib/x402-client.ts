@@ -138,7 +138,7 @@ export async function signX402Payment(
       const faucetHint =
         requirements.network === "base-sepolia"
           ? `Get Sepolia USDC at https://faucet.circle.com (pick Base Sepolia). The token contract is ${verifyingContract} — any other "USDC" on Base Sepolia won't work.`
-          : `Fund your wallet with mainnet USDC on contract ${verifyingContract}.`;
+          : `Fund the wallet with real USDC on Base mainnet. The token contract is ${verifyingContract} — any other "USDC" on Base won't work. A Coinbase withdraw or bridge from mainnet ETH is fastest.`;
       throw new X402ClientError(
         "insufficient_funds",
         `Not enough USDC on ${networkLabel}`,

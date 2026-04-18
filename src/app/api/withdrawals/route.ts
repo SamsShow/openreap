@@ -27,7 +27,7 @@ export async function GET() {
     withdrawals,
     treasury_configured: treasuryConfigured(),
     treasury_address: treasuryAddress(),
-    network: "base-sepolia",
+    network: "base",
   });
 }
 
@@ -106,25 +106,34 @@ export async function POST(request: Request) {
     created_at: string;
   };
 
-  // Attempt the real on-chain transfer (Sepolia ETH valued at USD amount).
+  // Attempt the real on-chain transfer (USDC on Base mainnet).
   const result = await sendPayout(destination, amountUsdc);
 
   if (!result.ok && result.reason === "treasury_not_configured") {
-    // Pending row stays for manual processing; funds remain in pending.
+    // Release the reservation so the user can retry once the operator
+    // configures the treasury. The withdrawal row is marked failed with the
+    // specific reason so operators still have an audit trail.
+    await sql`
+      UPDATE balances
+      SET available_usdc = available_usdc + ${amountUsdc},
+          pending_usdc = pending_usdc - ${amountUsdc},
+          updated_at = now()
+      WHERE user_id = ${user.id}
+    `;
     const updated = await sql`
       UPDATE withdrawals
-      SET status = 'pending_manual_review'
+      SET status = 'failed'
       WHERE id = ${row.id}
       RETURNING id, amount_usdc, destination, status, tx_hash, created_at, completed_at
     `;
     return NextResponse.json(
       {
         withdrawal: updated[0],
-        message:
-          "Withdrawal queued — operator needs to fund REAP_TREASURY_PRIVATE_KEY before it can broadcast.",
+        error:
+          "Treasury not configured. Retry once REAP_TREASURY_PRIVATE_KEY is set.",
         reason: result.reason,
       },
-      { status: 202 }
+      { status: 503 }
     );
   }
 
@@ -143,13 +152,18 @@ export async function POST(request: Request) {
       WHERE id = ${row.id}
       RETURNING id, amount_usdc, destination, status, tx_hash, created_at, completed_at
     `;
-    const httpStatus = result.reason === "treasury_underfunded" ? 409 : 502;
+    const httpStatus =
+      result.reason === "treasury_usdc_underfunded" ||
+      result.reason === "treasury_gas_underfunded"
+        ? 409
+        : 502;
     return NextResponse.json(
       {
         withdrawal: failed[0],
         error: result.message,
         reason: result.reason,
-        treasury_balance_usd: result.treasuryBalanceUsd,
+        treasury_usdc_balance_usd: result.treasuryUsdcBalanceUsd,
+        treasury_eth_balance_wei: result.treasuryEthBalanceWei,
         requested_usd: result.requestedUsd,
         treasury_address: treasuryAddress(),
       },
@@ -175,8 +189,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     withdrawal: completed[0],
-    message: "Withdrawal settled on Base Sepolia",
-    amount_eth: result.amountEth,
-    eth_price_usd: result.ethPriceUsd,
+    message: "Withdrawal settled on Base mainnet in USDC",
   });
 }

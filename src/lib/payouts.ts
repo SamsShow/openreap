@@ -1,10 +1,9 @@
 /**
- * Server-side treasury signer for outbound payouts on Base Sepolia.
+ * Server-side treasury signer for outbound payouts on Base mainnet.
  *
  * Earnings accrue as USD value in the `balances` table. When a creator
- * withdraws, we send the equivalent amount in native **Base Sepolia ETH**
- * (converted at the current ETH/USD spot price) because Sepolia ETH is
- * dramatically easier to faucet than Sepolia USDC.
+ * withdraws, we send the equivalent amount in **Base mainnet USDC** via an
+ * ERC-20 `transfer` from the treasury wallet.
  *
  * If REAP_TREASURY_PRIVATE_KEY is missing, sendPayout() returns a clear
  * `{ ok: false, reason: "treasury_not_configured" }` so the withdrawal row
@@ -18,10 +17,30 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
-import { BASE_SEPOLIA_RPC } from "./chains";
+import { base } from "viem/chains";
+import { BASE_MAINNET_RPC, USDC_BASE_MAINNET, REAP_TREASURY } from "./chains";
 
-const FALLBACK_ETH_PRICE_USD = 3000;
+const GAS_RESERVE_WEI = BigInt(150_000_000_000_000); // ~0.00015 ETH — plenty for ERC-20 transfer gas on Base
+
+const erc20Abi = [
+  {
+    name: "transfer",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
 
 export interface PayoutSuccess {
   ok: true;
@@ -29,8 +48,6 @@ export interface PayoutSuccess {
   from: `0x${string}`;
   to: `0x${string}`;
   amountUsd: number;
-  amountEth: number;
-  ethPriceUsd: number;
 }
 
 export interface PayoutFailure {
@@ -38,14 +55,17 @@ export interface PayoutFailure {
   /** Stable machine-readable reason — safe to persist to the DB. */
   reason:
     | "treasury_not_configured"
-    | "treasury_underfunded"
+    | "treasury_usdc_underfunded"
+    | "treasury_gas_underfunded"
     | "invalid_destination"
     | "rpc_failure"
     | "tx_reverted"
     | "unknown";
   message: string;
-  /** For treasury_underfunded: what we have vs. what was asked (in USD). */
-  treasuryBalanceUsd?: number;
+  /** For treasury_usdc_underfunded: USDC balance (USD) vs requested amount. */
+  treasuryUsdcBalanceUsd?: number;
+  /** For treasury_gas_underfunded: ETH balance (wei) on the treasury. */
+  treasuryEthBalanceWei?: string;
   requestedUsd?: number;
 }
 
@@ -63,39 +83,21 @@ function isAddress(value: string): value is `0x${string}` {
   return /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
-/** Get the current ETH/USD spot rate. Falls back to a constant if offline. */
-export async function getEthPriceUsd(): Promise<number> {
-  try {
-    const res = await fetch(
-      "https://api.coinbase.com/v2/exchange-rates?currency=ETH",
-      { cache: "no-store" }
-    );
-    if (!res.ok) return FALLBACK_ETH_PRICE_USD;
-    const data = (await res.json()) as {
-      data?: { rates?: { USD?: string } };
-    };
-    const rate = Number(data.data?.rates?.USD);
-    if (Number.isFinite(rate) && rate > 0) return rate;
-    return FALLBACK_ETH_PRICE_USD;
-  } catch {
-    return FALLBACK_ETH_PRICE_USD;
-  }
-}
-
-/** Convert a USD amount to wei using the given ETH/USD price. */
-function usdToWei(usd: number, ethPriceUsd: number): bigint {
-  const eth = usd / ethPriceUsd;
-  return BigInt(Math.floor(eth * 1e18));
+function usdToMicroUsdc(amountUsd: number): bigint {
+  return BigInt(Math.round(amountUsd * 1_000_000));
 }
 
 /**
- * Send Sepolia ETH from the Reap treasury to a creator's wallet, valued at
- * the given USD amount.
+ * Send mainnet USDC from the Reap treasury to a creator's wallet.
  */
 export async function sendPayout(
   to: string,
   amountUsd: number
 ): Promise<PayoutResult> {
+  const alignmentWarning = treasuryAlignmentWarning();
+  if (alignmentWarning) {
+    console.warn(`[payouts] ${alignmentWarning}`);
+  }
   const rawKey = process.env.REAP_TREASURY_PRIVATE_KEY;
   if (!rawKey) {
     return {
@@ -136,66 +138,100 @@ export async function sendPayout(
 
   const walletClient = createWalletClient({
     account,
-    chain: baseSepolia,
-    transport: http(BASE_SEPOLIA_RPC),
+    chain: base,
+    transport: http(BASE_MAINNET_RPC),
   });
 
   const publicClient = createPublicClient({
-    chain: baseSepolia,
-    transport: http(BASE_SEPOLIA_RPC),
+    chain: base,
+    transport: http(BASE_MAINNET_RPC),
   });
 
-  const ethPriceUsd = await getEthPriceUsd();
-  const weiAmount = usdToWei(amountUsd, ethPriceUsd);
-  const amountEth = Number(weiAmount) / 1e18;
-
-  if (weiAmount <= BigInt(0)) {
+  const amountMicro = usdToMicroUsdc(amountUsd);
+  if (amountMicro <= BigInt(0)) {
     return {
       ok: false,
       reason: "invalid_destination",
-      message: "Computed ETH amount rounded to zero — USD value too small.",
+      message: "Computed USDC amount rounded to zero — USD value too small.",
     };
   }
 
-  // Pre-flight: does the treasury hold enough ETH (including a small gas
-  // reserve)? Catch the most common failure before spending gas on a
-  // doomed transaction.
+  // Pre-flight: USDC balance must cover the payout; ETH balance must cover gas.
   try {
-    const balance = await publicClient.getBalance({ address: account.address });
-    // Reserve ~0.0001 ETH for gas (21k gas * 5 gwei ≈ 1.05e5 gwei = 1.05e14 wei)
-    const gasReserve = BigInt(150_000_000_000_000); // 1.5e14 wei ≈ 0.00015 ETH
-    if (balance < weiAmount + gasReserve) {
+    const [usdcBalance, ethBalance] = await Promise.all([
+      publicClient.readContract({
+        address: USDC_BASE_MAINNET,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [account.address],
+      }),
+      publicClient.getBalance({ address: account.address }),
+    ]);
+
+    if (usdcBalance < amountMicro) {
       return {
         ok: false,
-        reason: "treasury_underfunded",
+        reason: "treasury_usdc_underfunded",
         message:
-          "The Reap treasury doesn't hold enough Sepolia ETH to cover this withdrawal.",
-        treasuryBalanceUsd: (Number(balance) / 1e18) * ethPriceUsd,
+          "The Reap treasury doesn't hold enough USDC on Base mainnet to cover this withdrawal.",
+        treasuryUsdcBalanceUsd: Number(usdcBalance) / 1_000_000,
+        requestedUsd: amountUsd,
+      };
+    }
+
+    if (ethBalance < GAS_RESERVE_WEI) {
+      return {
+        ok: false,
+        reason: "treasury_gas_underfunded",
+        message:
+          "The treasury has USDC but not enough ETH on Base mainnet to pay gas. Top up the treasury with a small ETH float.",
+        treasuryEthBalanceWei: ethBalance.toString(),
         requestedUsd: amountUsd,
       };
     }
   } catch (err) {
-    console.warn(
-      "[payouts] pre-flight balance read failed:",
-      err instanceof Error ? err.message : err
-    );
+    // A failed pre-flight read means we can't verify either the USDC balance
+    // or the gas float. On mainnet this is money-moving code; fail fast
+    // rather than attempting a blind transfer.
+    return {
+      ok: false,
+      reason: "rpc_failure",
+      message: `Pre-flight balance read failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    };
   }
 
   let txHash: `0x${string}`;
   try {
-    txHash = await walletClient.sendTransaction({
-      to: to as `0x${string}`,
-      value: weiAmount,
+    txHash = await walletClient.writeContract({
+      address: USDC_BASE_MAINNET,
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [to as `0x${string}`, amountMicro],
     });
   } catch (err) {
     const rawMsg = err instanceof Error ? err.message : String(err);
     const reasonMatch = rawMsg.match(/reason:\s*([^\n.]+)/i);
     const reason = reasonMatch ? reasonMatch[1].trim() : null;
-    if (reason && /insufficient funds|exceeds balance/i.test(reason)) {
+    // USDC's ERC-20 revert reasons include "transfer amount exceeds balance"
+    // (contract-level, USDC-side); ETH-gas shortfalls come through as
+    // "insufficient funds for intrinsic transaction cost" or similar at the
+    // RPC layer. Classify by the revert text to avoid pointing operators at
+    // the wrong balance.
+    if (reason && /transfer amount exceeds balance|erc20:.*balance/i.test(reason)) {
       return {
         ok: false,
-        reason: "treasury_underfunded",
-        message: `Treasury transfer reverted: ${reason}.`,
+        reason: "treasury_usdc_underfunded",
+        message: `USDC transfer reverted — treasury USDC balance is below the payout amount: ${reason}.`,
+        requestedUsd: amountUsd,
+      };
+    }
+    if (reason && /insufficient funds|intrinsic gas|gas required exceeds/i.test(reason)) {
+      return {
+        ok: false,
+        reason: "treasury_gas_underfunded",
+        message: `Treasury transfer reverted while paying gas: ${reason}.`,
         requestedUsd: amountUsd,
       };
     }
@@ -218,7 +254,7 @@ export async function sendPayout(
       return {
         ok: false,
         reason: "tx_reverted",
-        message: `Transfer reverted on-chain. Hash: ${txHash}`,
+        message: `USDC transfer reverted on-chain. Hash: ${txHash}`,
       };
     }
   } catch {
@@ -226,10 +262,8 @@ export async function sendPayout(
       ok: true,
       txHash,
       from: account.address,
-      to,
+      to: to as `0x${string}`,
       amountUsd,
-      amountEth,
-      ethPriceUsd,
     };
   }
 
@@ -237,10 +271,8 @@ export async function sendPayout(
     ok: true,
     txHash,
     from: account.address,
-    to,
+    to: to as `0x${string}`,
     amountUsd,
-    amountEth,
-    ethPriceUsd,
   };
 }
 
@@ -257,4 +289,19 @@ export function treasuryAddress(): `0x${string}` | null {
   const pk = normalizePrivateKey(raw);
   if (!pk) return null;
   return privateKeyToAccount(pk).address;
+}
+
+/**
+ * Operational safety check: the address derived from REAP_TREASURY_PRIVATE_KEY
+ * must match the public REAP_TREASURY address, otherwise hires collect USDC
+ * in a wallet that can't be spent by the payout signer. Returns a warning
+ * string when misaligned, or null when aligned (or when no key is configured).
+ */
+export function treasuryAlignmentWarning(): string | null {
+  const signer = treasuryAddress();
+  if (!signer) return null;
+  if (signer.toLowerCase() !== REAP_TREASURY.toLowerCase()) {
+    return `REAP_TREASURY (${REAP_TREASURY}) does not match the address derived from REAP_TREASURY_PRIVATE_KEY (${signer}). Hires collect in the public treasury but the signer can only spend from its own wallet. Fix the env before launching.`;
+  }
+  return null;
 }

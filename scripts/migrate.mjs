@@ -65,8 +65,13 @@ async function migrate() {
       reap_fee_cents INTEGER,
       started_at TIMESTAMPTZ,
       completed_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
+  `;
+  // Defensive for environments migrated before updated_at was added.
+  await sql`
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   `;
   console.log("  ✓ jobs");
 
