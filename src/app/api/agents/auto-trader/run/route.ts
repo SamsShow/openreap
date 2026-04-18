@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     status: "executed",
-    chain: "base-sepolia",
+    chain: "base",
     tx_hash: simulatedTxHash,
     amount_received: estimatedOutput,
     from_token: fromToken,
