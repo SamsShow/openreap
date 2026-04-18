@@ -19,7 +19,7 @@ trace.
 | Reap Auto-Trader | `/reap-agents` | Interactive swap UI + integration docs |
 | Create agent | `/create-agent` | Upload a `SKILL.md`, preview parsed skill, go live |
 | Creator dashboard | `/dashboard` | Earnings, reputation, recent jobs |
-| Settings → Payouts | `/settings/payouts` | Withdraw earnings as Base Sepolia ETH at USD value |
+| Settings → Payouts | `/settings/payouts` | Withdraw earnings as USDC on Base mainnet |
 | Settings → Model | `/settings/model` | Bulk-switch the model for all your agents |
 | Escalation queue | `/queue` | Operator review for jobs that matched `escalate_if` |
 
@@ -29,12 +29,13 @@ trace.
 
 ### Inbound (user hires an agent)
 
-User wallet → **Base Sepolia**:
+User wallet → **Base mainnet**:
 1. Client probes the agent endpoint → HTTP 402 with x402 v1 requirements.
-2. Wallet signs an EIP-3009 `transferWithAuthorization` for Sepolia USDC.
+2. Wallet signs an EIP-3009 `transferWithAuthorization` for USDC on Base
+   mainnet (contract `0x8335…2913`).
 3. Client retries with `x-payment` header.
-4. Server forwards to [x402.org facilitator](https://x402.org/facilitator) for
-   on-chain settlement.
+4. Server forwards to [Elsa's x402 facilitator](https://facilitator.heyelsa.build)
+   for on-chain settlement.
 5. Agent runs, creator's balance accrues USD value.
 
 ### Outbound (Reap Auto-Trader pays Elsa)
@@ -47,9 +48,11 @@ User wallet → **Base mainnet**:
 
 ### Payouts (creator withdrawal)
 
-Reap treasury → creator wallet, **Base Sepolia ETH** valued at USD amount at
-the current spot price. Native ETH chosen over Sepolia USDC because it's
-dramatically easier to faucet for demos. Signing happens server-side via
+Reap treasury → creator wallet, **USDC on Base mainnet** via an ERC-20
+`transfer`. The treasury pre-flights both its USDC and ETH (for gas) balances
+before broadcasting, and surfaces two distinct failure reasons
+(`treasury_usdc_underfunded` vs `treasury_gas_underfunded`) so operators can
+see which shortfall blocked a withdrawal. Signing happens server-side via
 `REAP_TREASURY_PRIVATE_KEY`.
 
 ---
@@ -156,7 +159,7 @@ src/
 │   │   ├── agents/          # Per-agent x402 endpoints (run, approve)
 │   │   ├── agents/auto-trader/  # Base Auto-Trader (Track 3)
 │   │   ├── elsa/quote       # Server proxy to Elsa mainnet x402
-│   │   ├── withdrawals      # Sepolia ETH payout settlement
+│   │   ├── withdrawals      # Mainnet USDC payout settlement
 │   │   └── ...
 │   ├── reap-agents/         # Interactive swap UI + integration docs
 │   └── settings/            # Payouts, model, plans, profile, usage
@@ -170,7 +173,7 @@ src/
 │   ├── elsa-client.ts       # Browser-side Elsa mainnet quote helper
 │   ├── x402-client.ts       # EIP-3009 signer via wagmi
 │   ├── x402-errors.ts       # Error taxonomy + classifiers
-│   └── payouts.ts           # Treasury signer (Sepolia ETH, Coinbase price feed)
+│   └── payouts.ts           # Treasury signer (USDC on Base mainnet)
 └── proxy.ts                 # Next 16 middleware gating protected routes
 ```
 
