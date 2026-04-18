@@ -82,7 +82,7 @@ function FeatureRow({ feature }: { feature: Feature }) {
 }
 
 const starterFeatures: Feature[] = [
-  { label: "OpenRouter free model", included: true },
+  { label: "In-house model (Qwen 3.5 4B)", included: true },
   { label: "500 jobs/month", included: true },
   { label: "Analytics", included: false },
   { label: "Priority listing", included: false },

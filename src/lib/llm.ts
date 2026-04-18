@@ -16,10 +16,14 @@ const openrouter = new OpenAI({
 // ---------------------------------------------------------------------------
 // Model mapping
 //
-// Agents may store either a friendly key ("openrouter-free") or a raw
-// OpenRouter model ID ("meta-llama/llama-3.1-8b-instruct:free"). Both
-// resolve to the same wire call. Anything unrecognized falls back to the
-// free Llama endpoint so a mis-set agent row doesn't 400 out.
+// Agents may store either a friendly key ("inhouse") or a raw OpenRouter
+// model ID ("meta-llama/llama-3.1-8b-instruct:free"). Both resolve to the
+// same wire call. Anything unrecognized falls back to the free Llama model
+// so a mis-set agent row doesn't 400 out.
+//
+// Free-tier requests (any resolved ID ending in ":free") route to our
+// in-house Qwen 3.5 4B server when INHOUSE_LLM_URL is set, with automatic
+// fallback to OpenRouter's free Llama on failure.
 // ---------------------------------------------------------------------------
 
 export type ModelKey = string;
@@ -27,6 +31,7 @@ export type ModelKey = string;
 const DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
 
 const FRIENDLY_ALIASES: Record<string, string> = {
+  inhouse: DEFAULT_MODEL,
   "openrouter-free": DEFAULT_MODEL,
   "mistral-7b": "mistralai/mistral-7b-instruct:free",
   "gemma-2-9b": "google/gemma-2-9b-it:free",
@@ -75,15 +80,117 @@ export interface LLMResult {
 }
 
 // ---------------------------------------------------------------------------
-// callLLM
+// In-house LLM (Qwen 3.5 4B served from INHOUSE_LLM_URL)
 // ---------------------------------------------------------------------------
 
-export async function callLLM(
+const INHOUSE_MODEL_ID = "qwen3.5-4b";
+const INHOUSE_REQUEST_TIMEOUT_MS = 20_000;
+const INHOUSE_MAX_ATTEMPTS = 3;
+const INHOUSE_BASE_BACKOFF_MS = 300;
+
+interface InhouseResponse {
+  model_instance_id: string;
+  output: Array<{ type: string; content: string }>;
+  stats: {
+    input_tokens: number;
+    total_output_tokens: number;
+    reasoning_output_tokens?: number;
+  };
+}
+
+async function callInhouseLLM(
+  systemPrompt: string,
+  userInput: string
+): Promise<LLMResult> {
+  const url = `${process.env.INHOUSE_LLM_URL}/api/v1/chat`;
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    INHOUSE_REQUEST_TIMEOUT_MS
+  );
+
+  const startMs = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: INHOUSE_MODEL_ID,
+        system_prompt: systemPrompt,
+        input: userInput,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) throw new Error(`inhouse HTTP ${res.status}`);
+
+  const body = (await res.json()) as InhouseResponse;
+  const latency_ms = Date.now() - startMs;
+
+  // The server interleaves `reasoning` and `message` entries; we only want
+  // the final `message`.
+  const message = [...body.output]
+    .reverse()
+    .find((o) => o.type === "message");
+  const raw = (message?.content ?? "").trim();
+
+  let content: object;
+  try {
+    content = JSON.parse(raw) as object;
+  } catch {
+    content = { error: "output_invalid", raw };
+  }
+
+  return {
+    content,
+    raw,
+    tokens: body.stats.input_tokens + body.stats.total_output_tokens,
+    latency_ms,
+    model: `inhouse:${body.model_instance_id}`,
+    cost_usdc: 0,
+  };
+}
+
+async function callInhouseLLMWithRetry(
+  systemPrompt: string,
+  userInput: string
+): Promise<LLMResult> {
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt < INHOUSE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await callInhouseLLM(systemPrompt, userInput);
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      // Deterministic failures — don't burn retries.
+      if (/inhouse HTTP 4\d\d/.test(msg)) throw err;
+
+      if (attempt < INHOUSE_MAX_ATTEMPTS - 1) {
+        const backoff = INHOUSE_BASE_BACKOFF_MS * Math.pow(3, attempt);
+        console.warn(
+          `[llm] inhouse attempt ${attempt + 1}/${INHOUSE_MAX_ATTEMPTS} failed (${msg}); retrying in ${backoff}ms`
+        );
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+// ---------------------------------------------------------------------------
+// OpenRouter path
+// ---------------------------------------------------------------------------
+
+async function callOpenRouterLLM(
   systemPrompt: string,
   userInput: string,
-  modelKey: ModelKey
+  modelId: string
 ): Promise<LLMResult> {
-  const modelId = resolveModelId(modelKey);
   const costPerToken = COST_PER_TOKEN[modelId] ?? DEFAULT_COST_PER_TOKEN;
 
   const startMs = Date.now();
@@ -119,4 +226,30 @@ export async function callLLM(
     model: modelId,
     cost_usdc,
   };
+}
+
+// ---------------------------------------------------------------------------
+// callLLM — dispatch with in-house-first routing for free tier
+// ---------------------------------------------------------------------------
+
+export async function callLLM(
+  systemPrompt: string,
+  userInput: string,
+  modelKey: ModelKey
+): Promise<LLMResult> {
+  const modelId = resolveModelId(modelKey);
+  const isFreeTier = modelId.endsWith(":free");
+
+  if (isFreeTier && process.env.INHOUSE_LLM_URL) {
+    try {
+      return await callInhouseLLMWithRetry(systemPrompt, userInput);
+    } catch (err) {
+      console.warn(
+        `[llm] inhouse exhausted retries, falling back to OpenRouter:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  return callOpenRouterLLM(systemPrompt, userInput, modelId);
 }
