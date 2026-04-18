@@ -82,6 +82,142 @@ export interface LLMResult {
 }
 
 // ---------------------------------------------------------------------------
+// Tolerant JSON extraction
+//
+// Every agent in the platform asks its model for JSON, but model outputs
+// routinely violate strict JSON in three predictable ways:
+//   1. Wrapped in markdown fences  (```json\n{...}\n```)
+//   2. Preamble/postamble narration around the JSON object
+//   3. Truncated mid-value when the model runs out of tokens
+//
+// parseModelJson runs a series of repairs in order and returns the first
+// object that parses. If nothing parses we surface {error, raw} so the UI
+// can fall back. Used by both callInhouseLLM and callOpenRouterLLM so every
+// hired agent gets the same resilience.
+// ---------------------------------------------------------------------------
+
+export function parseModelJson(raw: string): object {
+  if (!raw) return { error: "output_invalid", raw: "" };
+
+  const attempts: string[] = [];
+
+  // Attempt 1: raw string as-is.
+  attempts.push(raw.trim());
+
+  // Attempt 2: strip a surrounding markdown code fence.
+  const fenced = raw.trim().match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  if (fenced) attempts.push(fenced[1].trim());
+
+  // Attempt 3: slice between the first `{` and the last `}` — strips
+  // preamble and postamble.
+  const base = fenced ? fenced[1].trim() : raw.trim();
+  const first = base.indexOf("{");
+  const last = base.lastIndexOf("}");
+  if (first >= 0 && last > first) attempts.push(base.slice(first, last + 1));
+
+  // Attempt 4: truncation repair — close unclosed containers, rewinding
+  // past any trailing incomplete token.
+  if (first >= 0) {
+    const repaired = repairTruncatedJson(base.slice(first));
+    if (repaired) attempts.push(repaired);
+  }
+
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (parsed && typeof parsed === "object") return parsed as object;
+    } catch {
+      // try next strategy
+    }
+  }
+
+  return { error: "output_invalid", raw };
+}
+
+/**
+ * Repair a JSON string that was truncated mid-generation. Rewinds past the
+ * last incomplete token and appends closers for still-open containers.
+ * Returns null if the input is unsalvageable.
+ */
+function repairTruncatedJson(start: string): string | null {
+  const depth: Array<"}" | "]"> = [];
+  let inString = false;
+  let escape = false;
+  let lastSafeCut = -1;
+
+  for (let i = 0; i < start.length; i += 1) {
+    const c = start[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") depth.push("}");
+    else if (c === "[") depth.push("]");
+    else if (c === "}" || c === "]") {
+      if (depth[depth.length - 1] === c) {
+        depth.pop();
+        lastSafeCut = i + 1;
+      } else {
+        return null; // structural mismatch
+      }
+    } else if (c === ",") {
+      if (depth.length > 0) lastSafeCut = i; // cut before the comma
+    }
+  }
+
+  let candidate = start;
+  if (inString || escape) {
+    if (lastSafeCut < 0) return null;
+    candidate = start.slice(0, lastSafeCut);
+  }
+
+  candidate = candidate.replace(/,\s*$/, "");
+
+  // Recount depth on the trimmed candidate so the closers match.
+  const finalDepth: Array<"}" | "]"> = [];
+  let s = false;
+  let e = false;
+  for (const c of candidate) {
+    if (e) {
+      e = false;
+      continue;
+    }
+    if (s) {
+      if (c === "\\") e = true;
+      else if (c === '"') s = false;
+      continue;
+    }
+    if (c === '"') {
+      s = true;
+      continue;
+    }
+    if (c === "{") finalDepth.push("}");
+    else if (c === "[") finalDepth.push("]");
+    else if (
+      (c === "}" || c === "]") &&
+      finalDepth[finalDepth.length - 1] === c
+    ) {
+      finalDepth.pop();
+    }
+  }
+
+  while (finalDepth.length > 0) {
+    candidate += finalDepth.pop();
+  }
+
+  return candidate;
+}
+
+// ---------------------------------------------------------------------------
 // In-house LLM (Qwen 3.5 4B served from INHOUSE_LLM_URL)
 // ---------------------------------------------------------------------------
 
@@ -158,24 +294,14 @@ async function callInhouseLLM(
   const latency_ms = Date.now() - startMs;
 
   // The server interleaves `reasoning` and `message` entries; we only want
-  // the final `message`.
+  // the final `message`. LM Studio has no json-object response_format, so
+  // models often wrap JSON in ```json ... ``` fences or truncate mid-value
+  // at the token cap — parseModelJson handles both.
   const message = [...body.output]
     .reverse()
     .find((o) => o.type === "message");
   const raw = (message?.content ?? "").trim();
-
-  // LM Studio has no json-object response_format like OpenAI does, so
-  // instruct-tuned models often wrap JSON in ```json ... ``` fences. Strip
-  // those before parsing.
-  const fenced = raw.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
-  const jsonCandidate = fenced ? fenced[1].trim() : raw;
-
-  let content: object;
-  try {
-    content = JSON.parse(jsonCandidate) as object;
-  } catch {
-    content = { error: "output_invalid", raw };
-  }
+  const content = parseModelJson(raw);
 
   return {
     content,
@@ -250,12 +376,9 @@ async function callOpenRouterLLM(
 
   const raw = completion.choices[0]?.message?.content ?? "";
   const tokens = completion.usage?.total_tokens ?? 0;
-  let content: object;
-  try {
-    content = JSON.parse(raw) as object;
-  } catch {
-    content = { error: "output_invalid", raw };
-  }
+  // Even with response_format: json_object, models occasionally emit
+  // preambles or trucate at max_tokens. parseModelJson is tolerant.
+  const content = parseModelJson(raw);
   const cost_usdc = tokens * costPerToken;
 
   return {
