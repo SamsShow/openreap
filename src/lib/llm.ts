@@ -271,10 +271,10 @@ async function callInhouseLLM(
         model: process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID,
         system_prompt: systemPrompt,
         input: userInput,
-        // LM Studio's /api/v1/chat defaults to a modest cap; structured
-        // JSON outputs routinely exceed that and truncate mid-field. Give
-        // it room to finish — OpenRouter path already uses 2048.
-        max_tokens: 2048,
+        // LM Studio's native /api/v1/chat is a strict schema — it rejects
+        // unknown keys like max_tokens. Tune generation limits inside
+        // LM Studio itself (Server Settings → Context Length). Our
+        // parseModelJson tolerates truncation if the cap is too low.
       }),
       signal: controller.signal,
     });
