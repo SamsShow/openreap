@@ -103,15 +103,27 @@ See `.env.example` for the full list. Minimum to run:
 - `REAP_TREASURY_PRIVATE_KEY` — signer for outbound payouts (leave empty to
   queue withdrawals as `pending_manual_review`)
 
-### Wallet funding for demos
+### Funding your wallet
 
-The treasury wallet needs both:
-- **Base Sepolia ETH** for gas + outbound payouts —
-  [Alchemy faucet](https://www.alchemy.com/faucets/base-sepolia)
-- **Base mainnet USDC** (small amount, ~$2) if you want the Reap Auto-Trader
-  to make real Elsa x402 calls
+Hires and the Base Auto-Trader settle in real **USDC on Base mainnet**
+(contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`). Fund your wallet via:
 
-Creators receive Sepolia ETH on withdrawal — nothing to pre-fund on their side.
+- Coinbase — withdraw USDC directly to your wallet on the Base network.
+- Any bridge (Across, Base Bridge) from Ethereum mainnet USDC.
+
+The Reap treasury also needs to hold both mainnet USDC (for creator payouts)
+and a small ETH float (for gas). Withdrawals are sent as real USDC on Base
+mainnet; creators don't need to pre-fund anything.
+
+**Local dev shortcut.** Set `NEXT_PUBLIC_ENABLE_SEPOLIA_FALLBACK=1` in
+`.env.local` to let the hire flow also accept Base Sepolia USDC. Grab Sepolia
+USDC from the [Circle faucet](https://faucet.circle.com) (pick Base Sepolia)
+or the [Alchemy Base Sepolia faucet](https://www.alchemy.com/faucets/base-sepolia).
+Withdrawals still require real USDC on mainnet even with the flag on.
+
+**Facilitator failover.** `NEXT_PUBLIC_X402_FACILITATOR` defaults to Elsa's
+facilitator (`https://facilitator.heyelsa.build`). Point it at
+`https://x402.org/facilitator` and redeploy if Elsa has an outage.
 
 ---
 
@@ -128,9 +140,9 @@ Creators receive Sepolia ETH on withdrawal — nothing to pre-fund on their side
 ## Security
 
 `.env.local` is gitignored — never commit real secrets. If a key ever leaks
-(in chat, a PR, logs), rotate it immediately. The treasury private key
-controls real testnet funds, but treat it like production anyway: one burner
-wallet per environment.
+(in chat, a PR, logs), rotate it immediately. `REAP_TREASURY_PRIVATE_KEY`
+controls real USDC on Base mainnet — store it in a vault, not `.env.local`,
+and use one burner wallet per environment.
 
 ---
 
