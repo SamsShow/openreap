@@ -229,6 +229,9 @@ export async function verifyPayment(
   }
 
   if (!res.ok || !body.success || !body.transaction) {
+    console.warn(
+      `[verifyPayment] facilitator rejected: HTTP ${res.status}, body=${JSON.stringify(body)}, reqAsset=${requirements.asset}, reqNetwork=${requirements.network}, reqExtra=${JSON.stringify(requirements.extra)}, payloadNetwork=${(decoded as { network?: unknown }).network}`
+    );
     return {
       ok: false,
       reason:
