@@ -68,6 +68,12 @@ function toMicroUsdc(priceUsdc: number): string {
   return String(Math.round(priceUsdc * 1e6));
 }
 
+// EIP-712 domain `name` must match the on-chain USDC contract's
+// DOMAIN_SEPARATOR or transferWithAuthorization fails signature verification.
+// Values are NOT interchangeable across deployments:
+//   Base mainnet USDC (0x8335…2913) → "USD Coin"
+//   Base Sepolia USDC (0x036C…CF7e) → "USDC"
+// Confirmed by probing Elsa's own 402 envelope (they ARE the facilitator).
 function buildMainnetRequirements(
   agentName: string,
   agentSlug: string,
@@ -83,7 +89,7 @@ function buildMainnetRequirements(
     payTo: REAP_TREASURY,
     maxTimeoutSeconds: 300,
     asset: USDC_BASE_MAINNET,
-    extra: { name: "USDC", version: "2" },
+    extra: { name: "USD Coin", version: "2" },
   };
 }
 
