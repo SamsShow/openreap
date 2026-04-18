@@ -110,21 +110,30 @@ export async function POST(request: Request) {
   const result = await sendPayout(destination, amountUsdc);
 
   if (!result.ok && result.reason === "treasury_not_configured") {
-    // Pending row stays for manual processing; funds remain in pending.
+    // Release the reservation so the user can retry once the operator
+    // configures the treasury. The withdrawal row is marked failed with the
+    // specific reason so operators still have an audit trail.
+    await sql`
+      UPDATE balances
+      SET available_usdc = available_usdc + ${amountUsdc},
+          pending_usdc = pending_usdc - ${amountUsdc},
+          updated_at = now()
+      WHERE user_id = ${user.id}
+    `;
     const updated = await sql`
       UPDATE withdrawals
-      SET status = 'pending_manual_review'
+      SET status = 'failed'
       WHERE id = ${row.id}
       RETURNING id, amount_usdc, destination, status, tx_hash, created_at, completed_at
     `;
     return NextResponse.json(
       {
         withdrawal: updated[0],
-        message:
-          "Withdrawal queued — operator needs to fund REAP_TREASURY_PRIVATE_KEY before it can broadcast.",
+        error:
+          "Treasury not configured. Retry once REAP_TREASURY_PRIVATE_KEY is set.",
         reason: result.reason,
       },
-      { status: 202 }
+      { status: 503 }
     );
   }
 

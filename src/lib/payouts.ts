@@ -18,7 +18,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
-import { BASE_MAINNET_RPC, USDC_BASE_MAINNET } from "./chains";
+import { BASE_MAINNET_RPC, USDC_BASE_MAINNET, REAP_TREASURY } from "./chains";
 
 const GAS_RESERVE_WEI = BigInt(150_000_000_000_000); // ~0.00015 ETH — plenty for ERC-20 transfer gas on Base
 
@@ -94,6 +94,10 @@ export async function sendPayout(
   to: string,
   amountUsd: number
 ): Promise<PayoutResult> {
+  const alignmentWarning = treasuryAlignmentWarning();
+  if (alignmentWarning) {
+    console.warn(`[payouts] ${alignmentWarning}`);
+  }
   const rawKey = process.env.REAP_TREASURY_PRIVATE_KEY;
   if (!rawKey) {
     return {
@@ -285,4 +289,19 @@ export function treasuryAddress(): `0x${string}` | null {
   const pk = normalizePrivateKey(raw);
   if (!pk) return null;
   return privateKeyToAccount(pk).address;
+}
+
+/**
+ * Operational safety check: the address derived from REAP_TREASURY_PRIVATE_KEY
+ * must match the public REAP_TREASURY address, otherwise hires collect USDC
+ * in a wallet that can't be spent by the payout signer. Returns a warning
+ * string when misaligned, or null when aligned (or when no key is configured).
+ */
+export function treasuryAlignmentWarning(): string | null {
+  const signer = treasuryAddress();
+  if (!signer) return null;
+  if (signer.toLowerCase() !== REAP_TREASURY.toLowerCase()) {
+    return `REAP_TREASURY (${REAP_TREASURY}) does not match the address derived from REAP_TREASURY_PRIVATE_KEY (${signer}). Hires collect in the public treasury but the signer can only spend from its own wallet. Fix the env before launching.`;
+  }
+  return null;
 }

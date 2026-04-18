@@ -137,8 +137,8 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // The Sepolia-side swap itself is simulated for this version; the
-  // mainnet Elsa x402 call is the required real on-chain leg of the trace.
+  // The swap leg itself is simulated for this version; the mainnet Elsa x402
+  // call is the required real on-chain leg of the trace.
   const simulatedTxHash = "0x" + randomHex(32);
 
   await recordJob(elsa_tx_hash, "executed");

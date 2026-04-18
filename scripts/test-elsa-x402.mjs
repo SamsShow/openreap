@@ -3,6 +3,10 @@
  *
  *   node --env-file=.env.local scripts/test-elsa-x402.mjs
  *
+ * ⚠️  MOVES REAL USDC ON BASE MAINNET. Do not run against a production
+ *     treasury key by accident. This script signs from
+ *     REAP_TREASURY_PRIVATE_KEY and pays Elsa ~$0.01 per run.
+ *
  * What this does, carefully:
  *   1. Derives the wallet address from REAP_TREASURY_PRIVATE_KEY.
  *   2. Reads USDC + ETH balances on Base mainnet. If USDC is below a
