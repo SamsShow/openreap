@@ -224,8 +224,8 @@ async function run() {
   }
 
   // 7. Seed the balance row. Available is capped at $5 so the demo withdraw
-  // fits comfortably within a Circle Sepolia faucet drip; lifetime_earned
-  // reflects the full $78 for realism in the dashboard cards.
+  // is a cheap canary on mainnet USDC (or Sepolia when the dev fallback flag
+  // is on); lifetime_earned reflects the full $78 for realism in the cards.
   const totalEarnedUsdc = (totalEarnedCents / 100).toFixed(2);
   const availableDemoUsdc = "5.00";
   await sql`
