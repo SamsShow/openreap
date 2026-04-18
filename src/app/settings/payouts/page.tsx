@@ -210,10 +210,22 @@ export default function PayoutsPage() {
           );
         }
         if (data.reason === "treasury_gas_underfunded") {
+          let ethDisplay: string | null = null;
+          if (typeof data.treasury_eth_balance_wei === "string") {
+            try {
+              ethDisplay = (
+                Number(BigInt(data.treasury_eth_balance_wei)) / 1e18
+              ).toFixed(6);
+            } catch {
+              ethDisplay = null;
+            }
+          }
           throw new X402ClientError(
             "agent_error",
             "Treasury out of gas",
-            `The treasury has USDC but not enough ETH on Base mainnet to pay the gas for this transfer. Top it up with a small ETH float.`,
+            ethDisplay !== null
+              ? `The treasury has USDC but only ${ethDisplay} ETH on Base mainnet — not enough to pay gas for this transfer. Top it up with a small ETH float.`
+              : `The treasury has USDC but not enough ETH on Base mainnet to pay the gas for this transfer. Top it up with a small ETH float.`,
             {
               hint: data.treasury_address
                 ? `Send a small amount of ETH on Base mainnet to: ${data.treasury_address}`

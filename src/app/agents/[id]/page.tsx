@@ -184,7 +184,7 @@ export default function AgentProfilePage() {
         );
       }
 
-      setHireProgress("Sign the Sepolia payment in your wallet...");
+      setHireProgress("Sign the payment in your wallet...");
       let signed;
       try {
         signed = await signX402Payment(wagmiConfig, address, requirements);
@@ -635,7 +635,7 @@ function HireEndpointDocs({ slug }: { slug: string }) {
       </div>
 
       <div className="text-xs text-muted">
-        Payment settles as Sepolia USDC via the x402.org facilitator. See the
+        Payment settles as USDC on Base mainnet via Elsa&apos;s x402 facilitator. See the
         <a
           href="https://x402.org"
           target="_blank"

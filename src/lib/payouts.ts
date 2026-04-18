@@ -186,10 +186,16 @@ export async function sendPayout(
       };
     }
   } catch (err) {
-    console.warn(
-      "[payouts] pre-flight balance read failed:",
-      err instanceof Error ? err.message : err
-    );
+    // A failed pre-flight read means we can't verify either the USDC balance
+    // or the gas float. On mainnet this is money-moving code; fail fast
+    // rather than attempting a blind transfer.
+    return {
+      ok: false,
+      reason: "rpc_failure",
+      message: `Pre-flight balance read failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    };
   }
 
   let txHash: `0x${string}`;
@@ -204,7 +210,20 @@ export async function sendPayout(
     const rawMsg = err instanceof Error ? err.message : String(err);
     const reasonMatch = rawMsg.match(/reason:\s*([^\n.]+)/i);
     const reason = reasonMatch ? reasonMatch[1].trim() : null;
-    if (reason && /insufficient funds|exceeds balance/i.test(reason)) {
+    // USDC's ERC-20 revert reasons include "transfer amount exceeds balance"
+    // (contract-level, USDC-side); ETH-gas shortfalls come through as
+    // "insufficient funds for intrinsic transaction cost" or similar at the
+    // RPC layer. Classify by the revert text to avoid pointing operators at
+    // the wrong balance.
+    if (reason && /transfer amount exceeds balance|erc20:.*balance/i.test(reason)) {
+      return {
+        ok: false,
+        reason: "treasury_usdc_underfunded",
+        message: `USDC transfer reverted — treasury USDC balance is below the payout amount: ${reason}.`,
+        requestedUsd: amountUsd,
+      };
+    }
+    if (reason && /insufficient funds|intrinsic gas|gas required exceeds/i.test(reason)) {
       return {
         ok: false,
         reason: "treasury_gas_underfunded",
