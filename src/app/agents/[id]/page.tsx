@@ -103,7 +103,7 @@ curl -sS -X POST ${endpoint} \\
   -H 'Content-Type: application/json' \\
   -d '{"input":"Your task description"}'
 # HTTP/1.1 402
-# {"x402Version":1,"accepts":[{"scheme":"exact","network":"base-sepolia",...}]}
+# {"x402Version":1,"accepts":[{"scheme":"exact","network":"base",...}]}
 
 # 2. Sign the EIP-3009 auth client-side, then retry with x-payment
 curl -sS -X POST ${endpoint} \\
