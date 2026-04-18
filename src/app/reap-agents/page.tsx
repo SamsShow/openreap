@@ -85,7 +85,14 @@ type SwapResult = {
   error?: string;
 };
 
+const AGENT_TABS = [
+  { key: "auto-trader", label: "Base Auto-Trader" },
+  { key: "code-roaster", label: "Code Roaster" },
+] as const;
+type AgentTabKey = (typeof AGENT_TABS)[number]["key"];
+
 export default function ReapAgentsPage() {
+  const [activeAgent, setActiveAgent] = useState<AgentTabKey>("auto-trader");
   const [tokenIn, setTokenIn] = useState("USDC");
   const [tokenOut, setTokenOut] = useState("ETH");
   const [amount, setAmount] = useState("100");
@@ -185,9 +192,31 @@ export default function ReapAgentsPage() {
           Reap Agents
         </motion.h1>
         <motion.p variants={fadeUp} custom={2} initial="hidden" animate="show" className="text-[17px] leading-7 text-muted max-w-[640px] mt-5">
-          First-party agents built and owned by Reap. The Base Auto-Trader makes a real Elsa x402 call on Base mainnet — every run is a verifiable on-chain x402 trace settled through Elsa&apos;s facilitator.
+          First-party agents built and owned by Reap. Each run is a verifiable on-chain x402 trace settled through Elsa&apos;s facilitator on Base mainnet. Any AI agent can discover and pay to use these tools via <span className="font-mono text-cream">/api/agents/catalog</span>.
         </motion.p>
       </section>
+
+      {/* Agent tabs */}
+      <section className="px-16 max-w-[1312px] mx-auto mb-6">
+        <div className="flex items-center gap-1 border-b border-border">
+          {AGENT_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveAgent(t.key)}
+              className={`px-5 py-3 text-[15px] font-medium transition-colors border-b-2 -mb-px ${
+                activeAgent === t.key
+                  ? "text-cream border-terracotta"
+                  : "text-muted border-transparent hover:text-cream"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {activeAgent === "auto-trader" && (
+        <>
 
       {/* Interactive Swap Card */}
       <section className="px-16 max-w-[1312px] mx-auto">
@@ -385,12 +414,6 @@ export default function ReapAgentsPage() {
       {/* x402 Endpoint (for external agents) */}
       <AutoTraderEndpointDocs />
 
-      {/* Code Roaster Reap Agent */}
-      <CodeRoasterCard />
-
-      {/* Code Roaster x402 docs */}
-      <CodeRoasterEndpointDocs />
-
       {/* How It Works */}
       <section className="px-16 py-16 max-w-[1312px] mx-auto">
         <motion.h2 variants={fadeUp} custom={0} initial="hidden" whileInView="show" viewport={{ once: true }} className="font-heading font-bold text-xl text-cream mb-8">
@@ -417,8 +440,17 @@ export default function ReapAgentsPage() {
           ))}
         </div>
       </section>
+        </>
+      )}
 
-      {/* Marketplace CTA */}
+      {activeAgent === "code-roaster" && (
+        <>
+          <CodeRoasterCard />
+          <CodeRoasterEndpointDocs />
+        </>
+      )}
+
+      {/* Marketplace CTA — shown for both tabs */}
       <section className="px-16 pb-16 max-w-[1312px] mx-auto">
         <motion.div
           variants={fadeUp} custom={0} initial="hidden" whileInView="show" viewport={{ once: true }}
@@ -428,7 +460,7 @@ export default function ReapAgentsPage() {
           <div>
             <h2 className="font-heading font-bold text-xl text-cream">Available on the Marketplace</h2>
             <p className="text-sm text-muted mt-2 max-w-[520px]">
-              The Base Auto-Trader is listed alongside community agents. Any AI agent can discover and hire it via Elsa x402.
+              All Reap agents are listed alongside community agents. Any AI agent can discover and hire them via Elsa x402.
             </p>
           </div>
           <Link href="/marketplace" className="px-6 py-3 bg-terracotta rounded-full text-[15px] font-medium text-off-white hover:opacity-90 transition-opacity flex-shrink-0">
