@@ -64,13 +64,13 @@ export async function POST(
     }
     signedNetwork = decoded.network;
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const reason =
+      msg === "payload missing network"
+        ? "x-payment payload is missing the network field"
+        : `x-payment header is not valid base64 JSON: ${msg}`;
     return NextResponse.json(
-      {
-        error: "Payment verification failed",
-        reason: `x-payment header is not valid base64 JSON: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      },
+      { error: "Payment verification failed", reason },
       { status: 402 }
     );
   }

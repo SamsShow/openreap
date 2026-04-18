@@ -172,9 +172,6 @@ interface FacilitatorSettleResponse {
  * Parses the base64-encoded x402 payload, forwards it to the configured
  * facilitator's /settle endpoint (Elsa by default), and returns the on-chain
  * tx hash.
- *
- * @param paymentHeader     Raw value of the `x-payment` request header.
- * @param requirements      The PaymentRequirements advertised for this network.
  */
 export async function verifyPayment(
   paymentHeader: string | null | undefined,
