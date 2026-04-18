@@ -106,7 +106,7 @@ export async function POST(request: Request) {
     created_at: string;
   };
 
-  // Attempt the real on-chain transfer (Sepolia ETH valued at USD amount).
+  // Attempt the real on-chain transfer (USDC on Base mainnet).
   const result = await sendPayout(destination, amountUsdc);
 
   if (!result.ok && result.reason === "treasury_not_configured") {

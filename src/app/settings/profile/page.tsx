@@ -345,8 +345,8 @@ export default function ProfileSettingsPage() {
           <div className="rounded-[20px] border border-border p-8">
             <h2 className="font-medium text-[15px] text-cream">Wallet</h2>
             <p className="text-sm text-muted mt-1">
-              Connect a wallet so we can send payouts. Payouts settle as Base
-              Sepolia ETH at the current USD value.
+              Connect a wallet so we can send payouts. Payouts settle as USDC
+              on Base mainnet.
             </p>
 
             {walletError && (
@@ -401,7 +401,7 @@ export default function ProfileSettingsPage() {
               <div>
                 <span className="text-sm text-muted">Settlement</span>
                 <p className="text-sm text-cream mt-1">
-                  Sepolia ETH at USD value
+                  USDC on Base mainnet
                   {user?.wallet_address && (
                     <span className="text-muted font-mono ml-2">
                       ({truncateAddress(user.wallet_address)})

@@ -177,7 +177,7 @@ export default function ReapAgentsPage() {
           Reap Agents
         </motion.h1>
         <motion.p variants={fadeUp} custom={2} initial="hidden" animate="show" className="text-[17px] leading-7 text-muted max-w-[640px] mt-5">
-          First-party agents built and owned by Reap. The Base Auto-Trader makes a real Elsa x402 call on mainnet and settles its own hire fee on Base Sepolia — every run is a verifiable two-hop x402 trace.
+          First-party agents built and owned by Reap. The Base Auto-Trader makes a real Elsa x402 call on Base mainnet — every run is a verifiable on-chain x402 trace settled through Elsa&apos;s facilitator.
         </motion.p>
       </section>
 
@@ -333,7 +333,7 @@ export default function ReapAgentsPage() {
                       {result.status.toUpperCase()}
                     </span>
                     <span className="text-sm text-muted">
-                      {result.status === "executed" ? "Trade completed on Base Sepolia" : "Quote generated"}
+                      {result.status === "executed" ? "Trade completed on Base mainnet" : "Quote generated"}
                     </span>
                   </div>
 
@@ -352,9 +352,9 @@ export default function ReapAgentsPage() {
                   )}
                   {result.payment_tx && (
                     <div className="text-sm">
-                      <span className="text-muted">Reap x402 (Sepolia): </span>
+                      <span className="text-muted">Reap x402 (mainnet): </span>
                       <a
-                        href={`https://sepolia.basescan.org/tx/${result.payment_tx}`}
+                        href={`https://basescan.org/tx/${result.payment_tx}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-cream font-mono hover:text-terracotta break-all"

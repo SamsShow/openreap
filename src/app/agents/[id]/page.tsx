@@ -80,11 +80,11 @@ const probe = await fetch("${endpoint}", {
 const { accepts } = await probe.json(); // x402 v1 envelope
 
 // 2. Sign an EIP-3009 transferWithAuthorization for accepts[0]
-//    (USDC on Base Sepolia — see https://eips.ethereum.org/EIPS/eip-3009)
+//    (USDC on Base mainnet — see https://eips.ethereum.org/EIPS/eip-3009)
 const xPayment = await signX402Payment(accepts[0]); // base64 JSON
 
 // 3. Retry with the x-payment header — the server settles on-chain via the
-//    x402.org facilitator and runs the agent
+//    Elsa x402 facilitator and runs the agent
 const response = await fetch("${endpoint}", {
   method: "POST",
   headers: {
@@ -215,11 +215,11 @@ export default function AgentProfilePage() {
             : "your wallet";
           throw new X402ClientError(
             "insufficient_funds",
-            "Not enough USDC on Base Sepolia",
-            `Your wallet ${short} doesn't hold $${priceUsd.toFixed(2)} USDC on Base Sepolia. Fund it and retry.`,
+            "Not enough USDC on Base mainnet",
+            `Your wallet ${short} doesn't hold $${priceUsd.toFixed(2)} USDC on Base mainnet. Fund it and retry.`,
             {
               hint:
-                "Get Sepolia USDC at https://faucet.circle.com (pick Base Sepolia). The token contract is 0x036CbD53842c5426634e7929541eC2318f3dCF7e — any other 'USDC' on Base Sepolia won't work.",
+                "Fund your wallet with USDC on Base mainnet. The token contract is 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 — any other 'USDC' on Base won't work. A Coinbase withdraw or bridge from mainnet ETH is fastest.",
               details: data,
             }
           );
@@ -499,15 +499,15 @@ export default function AgentProfilePage() {
           <div className="flex items-start justify-between gap-6 flex-wrap">
             <div className="flex-1 min-w-[280px]">
               <p className="text-[13px] font-medium tracking-[0.06em] uppercase text-terracotta mb-2">
-                Hire via Elsa x402 · Base Sepolia
+                Hire via Elsa x402 · Base mainnet
               </p>
               <h3 className="font-heading font-bold text-[22px] text-cream">
-                Pay {priceDisplay} in testnet USDC and run it now
+                Pay {priceDisplay} in USDC and run it now
               </h3>
               <p className="text-sm text-muted mt-2 max-w-[640px]">
                 Your connected wallet signs an EIP-3009 authorization for USDC
-                on Base Sepolia, the same x402 protocol Elsa runs. We settle it
-                on-chain via the x402.org facilitator, then run the agent. No
+                on Base mainnet, the same x402 protocol Elsa runs. We settle it
+                on-chain via Elsa&apos;s x402 facilitator, then run the agent. No
                 server-side keys.
               </p>
             </div>
@@ -549,7 +549,7 @@ export default function AgentProfilePage() {
             </button>
             {hireProgress && !hireLoading ? null : (
               <p className="text-xs text-muted">
-                Payment goes to Reap treasury on Base Sepolia
+                Payment goes to Reap treasury on Base mainnet
               </p>
             )}
           </div>
@@ -571,7 +571,7 @@ export default function AgentProfilePage() {
               </pre>
               {typeof hireResult.tx_hash === "string" && (
                 <a
-                  href={`https://sepolia.basescan.org/tx/${hireResult.tx_hash}`}
+                  href={`https://basescan.org/tx/${hireResult.tx_hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block mt-3 text-terracotta hover:underline text-xs"
