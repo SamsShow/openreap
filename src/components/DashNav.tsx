@@ -11,6 +11,7 @@ const navLinks = [
   { label: "Escalation Queue", href: "/queue" },
   { label: "Marketplace", href: "/marketplace" },
   { label: "Reap Agents", href: "/reap-agents" },
+  { label: "Docs", href: "/docs" },
 ];
 
 const settingsTabs = [

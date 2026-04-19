@@ -81,6 +81,26 @@ export function Hero() {
               />
             </svg>
           </Link>
+          <Link
+            href="/docs"
+            className="flex items-center gap-1.5 px-6 py-3.5 text-[15px] text-cream border border-cream/20 rounded-full shadow-[0_0_12px_inset_#F0E6D30A,0_0_20px_#F0E6D314] hover:border-cream/40 transition-colors"
+          >
+            Read the Docs
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M3.5 2h6.5l3 3v9a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"
+                stroke="currentColor"
+                strokeWidth="1.25"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M10 2v3h3"
+                stroke="currentColor"
+                strokeWidth="1.25"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Link>
         </motion.div>
 
         <motion.div
