@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Inter, Instrument_Serif } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Web3Provider } from "@/components/Web3Provider";
 
@@ -71,6 +72,7 @@ export default function RootLayout({
     >
       <body>
           <Web3Provider>{children}</Web3Provider>
+          <Analytics />
         </body>
     </html>
   );
