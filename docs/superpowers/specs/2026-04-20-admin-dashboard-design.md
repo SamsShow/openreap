@@ -25,7 +25,7 @@ A single `/admin` page, gated to a short email allowlist, that surfaces platform
 ## Architecture
 
 - **Route:** `/admin`, single Next.js Server Component.
-- **Access gate:** `src/proxy.ts` checks the logged-in session's email (lowercased) against `process.env.ADMIN_EMAILS` (comma-separated). Non-admins and logged-out visitors receive `404` via `notFound()` — no information leak that the route exists.
+- **Access gate:** enforced inside `/admin/page.tsx` itself. The Server Component calls `getSession()` (uses `next/headers` cookies — unavailable in proxy/middleware context) and compares the session email (lowercased) to `process.env.ADMIN_EMAILS`. Non-admins and logged-out visitors hit `notFound()` and render the standard 404. No info leak that the route exists. The proxy is left focused on session tracking only.
 - **Data path:** Server Component calls `src/lib/admin/stats.ts`. That module fires 9 SQL queries in parallel via the existing `@neondatabase/serverless` client and returns a typed `AdminStats` object. No API routes. No client-side data fetching. No React Query.
 - **Refresh model:** reload the page. There is no filter UI and no polling.
 - **Env var:** `ADMIN_EMAILS` — comma-separated list, trimmed and lowercased on read.
@@ -40,7 +40,7 @@ New table, created by a new `scripts/migrate-v3.mjs` following the pattern of ex
 CREATE TABLE daily_sessions (
   session_id   TEXT NOT NULL,
   day          DATE NOT NULL,
-  user_id      INT  NULL REFERENCES users(id) ON DELETE SET NULL,
+  user_id      UUID NULL REFERENCES users(id) ON DELETE SET NULL,
   first_path   TEXT NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (session_id, day)
@@ -126,7 +126,7 @@ Single page, top-down:
 
 ### Components & styling
 
-- **Chart library:** Tremor. Newly installed dependency. Its components are wrapped in thin `AdminCard` / `AdminChart` / `AdminTable` wrappers that apply existing design tokens (`bg-surface`, `border-cream/10`, `Space Grotesk` headings, terracotta/cream accent palette). Tremor's default palette is overridden at the wrapper level.
+- **Chart library:** Recharts 3.x. Newly installed dependency. (Tremor was considered during design but its current release requires React 18 and Tailwind v3; this repo is React 19 + Tailwind v4.) Charts live inside hand-built `AdminCard` wrappers so styling uses existing design tokens (`bg-surface`, `border-cream/10`, `Space Grotesk` headings, terracotta/cream palette) directly, with no third-party theme to override.
 - **Empty states:** any slice with zero data shows `—` in muted colour. No "No data yet." placeholder boxes — the dashboard stays visually consistent from day one.
 
 ## Error Handling
@@ -156,7 +156,7 @@ No automated tests are added — the repo has no test framework configured.
 - `recordDailySession()` and cookie handling in the proxy
 - `src/lib/admin/stats.ts` with 9 query slices
 - 6 stat cards, 3 charts, 3 tables
-- Tremor installed and theme-overridden to match existing design tokens
+- Recharts installed, composed inside Tailwind card components
 - `ADMIN_EMAILS` added to `.env.example`
 
 **Explicitly out of scope:**
