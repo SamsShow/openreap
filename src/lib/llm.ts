@@ -238,13 +238,16 @@ function inhouseTimeoutMs(): number {
     : INHOUSE_DEFAULT_TIMEOUT_MS;
 }
 
-interface InhouseResponse {
-  model_instance_id: string;
-  output: Array<{ type: string; content: string }>;
-  stats: {
-    input_tokens: number;
-    total_output_tokens: number;
-    reasoning_output_tokens?: number;
+interface InhouseChatCompletion {
+  id?: string;
+  model?: string;
+  choices: Array<{
+    message?: { content?: string | null };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
   };
 }
 
@@ -252,7 +255,12 @@ async function callInhouseLLM(
   systemPrompt: string,
   userInput: string
 ): Promise<LLMResult> {
-  const url = `${process.env.INHOUSE_LLM_URL}/api/v1/chat`;
+  // LM Studio's native /api/v1/chat ties into a server-level Structured
+  // Output toggle that 400s ("JSON schema is missing in json-mode request")
+  // when it's on without a schema. The OpenAI-compatible endpoint has a
+  // stable documented schema and ignores that toggle entirely.
+  const url = `${process.env.INHOUSE_LLM_URL}/v1/chat/completions`;
+  const modelId = process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), inhouseTimeoutMs());
 
@@ -268,13 +276,15 @@ async function callInhouseLLM(
         "ngrok-skip-browser-warning": "true",
       },
       body: JSON.stringify({
-        model: process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID,
-        system_prompt: systemPrompt,
-        input: userInput,
-        // LM Studio's native /api/v1/chat is a strict schema — it rejects
-        // unknown keys like max_tokens. Tune generation limits inside
-        // LM Studio itself (Server Settings → Context Length). Our
-        // parseModelJson tolerates truncation if the cap is too low.
+        model: modelId,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userInput },
+        ],
+        // response_format intentionally omitted: some LM Studio builds 400
+        // on `json_object` without a schema. The system prompt already
+        // demands JSON-only and parseModelJson tolerates fences/truncation.
+        temperature: 0.1,
       }),
       signal: controller.signal,
     });
@@ -285,30 +295,23 @@ async function callInhouseLLM(
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
     console.warn(
-      `[inhouse] ${res.status} from ${url} (model=${process.env.INHOUSE_LLM_MODEL || INHOUSE_DEFAULT_MODEL_ID}); body: ${errBody.slice(0, 200)}`
+      `[inhouse] ${res.status} from ${url} (model=${modelId}); body: ${errBody.slice(0, 500)}`
     );
-    throw new Error(`inhouse HTTP ${res.status}`);
+    throw new Error(`inhouse HTTP ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
-  const body = (await res.json()) as InhouseResponse;
+  const body = (await res.json()) as InhouseChatCompletion;
   const latency_ms = Date.now() - startMs;
 
-  // The server interleaves `reasoning` and `message` entries; we only want
-  // the final `message`. LM Studio has no json-object response_format, so
-  // models often wrap JSON in ```json ... ``` fences or truncate mid-value
-  // at the token cap — parseModelJson handles both.
-  const message = [...body.output]
-    .reverse()
-    .find((o) => o.type === "message");
-  const raw = (message?.content ?? "").trim();
+  const raw = (body.choices[0]?.message?.content ?? "").trim();
   const content = parseModelJson(raw);
 
   return {
     content,
     raw,
-    tokens: body.stats.input_tokens + body.stats.total_output_tokens,
+    tokens: body.usage?.total_tokens ?? 0,
     latency_ms,
-    model: `inhouse:${body.model_instance_id}`,
+    model: `inhouse:${body.model ?? modelId}`,
     cost_usdc: 0,
   };
 }
