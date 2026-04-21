@@ -8,6 +8,7 @@ import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { SmartNav } from "@/components/SmartNav";
 import { ErrorCard } from "@/components/ErrorCard";
 import { CodeBlock } from "@/components/CodeBlock";
+import { ThinkingLoader } from "@/components/ThinkingLoader";
 import { getElsaMainnetQuote } from "@/lib/elsa-client";
 import {
   signX402Payment,
@@ -347,8 +348,20 @@ export default function ReapAgentsPage() {
             </div>
           </div>
 
+          {loading && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-8 pt-8 border-t border-border"
+            >
+              <div className="rounded-xl bg-surface/60 border border-border p-5">
+                <ThinkingLoader sublabel={progress || "Waiting for the agent..."} />
+              </div>
+            </motion.div>
+          )}
+
           {/* Result */}
-          {(result || error !== null) && (
+          {!loading && (result || error !== null) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -831,7 +844,19 @@ function CodeRoasterCard() {
           </div>
         </div>
 
-        {(result || error !== null) && (
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 pt-8 border-t border-border"
+          >
+            <div className="rounded-xl bg-surface/60 border border-border p-5">
+              <ThinkingLoader sublabel={progress || "Waiting for the agent..."} />
+            </div>
+          </motion.div>
+        )}
+
+        {!loading && (result || error !== null) && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}

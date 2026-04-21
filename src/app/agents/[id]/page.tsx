@@ -9,6 +9,7 @@ import { ErrorCard } from "@/components/ErrorCard";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Erc8004Badge } from "@/components/Erc8004Badge";
 import { CategoryIcon } from "@/components/CategoryIcon";
+import { ThinkingLoader } from "@/components/ThinkingLoader";
 import { motion } from "framer-motion";
 import { signX402Payment } from "@/lib/x402-client";
 import {
@@ -553,6 +554,14 @@ export default function AgentProfilePage() {
               </p>
             )}
           </div>
+
+          {hireLoading ? (
+            <div className="mt-6 rounded-xl bg-surface/60 border border-border p-5">
+              <ThinkingLoader
+                sublabel={hireProgress || "Waiting for the agent..."}
+              />
+            </div>
+          ) : null}
 
           {hireError ? (
             <div className="mt-6">
