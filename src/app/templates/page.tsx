@@ -3,33 +3,7 @@
 import Link from "next/link";
 import { SmartNav } from "@/components/SmartNav";
 import { motion, type Variants } from "framer-motion";
-
-const templates = [
-  {
-    role: "Lawyer",
-    skillType: "Contract Review",
-    description:
-      "Reviews NDAs, service agreements, vendor contracts. Flags indemnity clauses and risk areas.",
-    code: `name: contract-reviewer\nprice: 5\nskill: Review contracts for...\nescalate_if: liability > 100K`,
-    downloads: 342,
-  },
-  {
-    role: "Tax Accountant",
-    skillType: "Tax Query",
-    description:
-      "Handles tax return queries, eligibility checks, and compliance flags for small businesses and freelancers.",
-    code: `name: tax-assistant\nprice: 3\nskill: Answer tax queries...\nescalate_if: revenue > 500K`,
-    downloads: 518,
-  },
-  {
-    role: "Senior Developer",
-    skillType: "Code Review",
-    description:
-      "Reviews PRs for security flaws, refactoring opportunities, and team convention enforcement.",
-    code: `name: code-reviewer\nprice: 12\nskill: Review code for...\nescalate_if: critical_vuln`,
-    downloads: 189,
-  },
-];
+import { TEMPLATES } from "@/lib/templates";
 
 const containerVariants = {
   hidden: {},
@@ -131,9 +105,9 @@ export default function TemplatesPage() {
         animate="visible"
       >
         <div className="grid grid-cols-3 gap-6">
-          {templates.map((template) => (
+          {TEMPLATES.map((template) => (
             <motion.div
-              key={template.role}
+              key={template.id}
               className="rounded-[20px] border border-surface overflow-clip"
               variants={fadeUp}
               whileHover={{ y: -6, transition: { duration: 0.25 } }}
@@ -164,7 +138,7 @@ export default function TemplatesPage() {
                   SKILL.MD PREVIEW
                 </span>
                 <pre className="font-mono text-[13px] leading-5 text-muted mt-2 whitespace-pre-wrap">
-                  {template.code}
+                  {template.preview}
                 </pre>
               </div>
 
@@ -174,7 +148,7 @@ export default function TemplatesPage() {
                   {template.downloads} downloads
                 </span>
                 <Link
-                  href={`/create-agent?template=${encodeURIComponent(template.code)}`}
+                  href={`/create-agent?template=${template.id}`}
                   className="px-5 py-2 bg-terracotta rounded-full text-[14px] font-medium text-off-white cursor-pointer hover:opacity-90 transition-opacity"
                 >
                   Use this template

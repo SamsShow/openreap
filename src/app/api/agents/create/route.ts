@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
       parsed_skill = ${parsedSkillJson}::jsonb,
       system_prompt = ${skill.system_prompt},
       status = 'draft',
+      is_live = false,
       updated_at = now()
     RETURNING *
   `;

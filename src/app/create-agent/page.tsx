@@ -5,52 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { DashNav } from "@/components/DashNav";
+import { findTemplate } from "@/lib/templates";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
 };
-
-const SAMPLE_SKILL = `## meta
-name: "Commercial Contract Review"
-version: "1.0"
-author: "Sarah Mitchell, Attorney"
-price_usdc: 5.00
-category: "legal"
-model_tier: "standard"
-
-## service
-description: |
-  Reviews NDAs, service agreements, and vendor contracts for tech startups. Flags risk clauses, indemnity issues, and suggests protective edits. Specializes in SaaS and technology contracts.
-
-accepts:
-  - NDA and confidentiality agreements
-  - Service and vendor agreements
-  - Software license agreements
-
-rejects:
-  - Documents longer than 20 pages
-  - Non-English documents
-
-## output_format
-{
-  "risk_score": "Low|Medium|High",
-  "flagged_clauses": [{"clause": "...", "issue": "...", "fix": "..."}],
-  "summary": "2-3 sentence plain English"
-}
-
-## examples
-example_1:
-  input: "NDA with unlimited liability and no term limit"
-  output: '{"risk_score":"High","flagged_clauses":[{"clause":"Unlimited liability","issue":"No cap on indemnity","fix":"Add liability ceiling of 2x contract value"}],"summary":"High-risk NDA with uncapped liability."}'
-
-example_2:
-  input: "Standard SaaS agreement, Indian jurisdiction"
-  output: '{"risk_score":"Low","flagged_clauses":[],"summary":"Standard agreement with appropriate protections."}'
-
-## escalate_if
-- Contract value exceeds $100K
-- Government entity as a party`;
 
 type ParsedAgent = {
   meta: { name: string; price_usdc: number; category: string; model_tier: string; author: string };
@@ -103,8 +63,13 @@ function CreateAgentInner() {
   }, [router]);
 
   useEffect(() => {
-    const template = searchParams.get("template");
-    if (template) setSkillMd(template);
+    const templateParam = searchParams.get("template");
+    if (!templateParam) return;
+    // New behavior: template query is a template ID from /templates. Fall
+    // back to treating it as raw SKILL.md for links created before the ID
+    // lookup existed.
+    const t = findTemplate(templateParam);
+    setSkillMd(t ? t.skillMd : templateParam);
   }, [searchParams]);
 
   async function handleParse() {
@@ -223,12 +188,12 @@ function CreateAgentInner() {
           <div className="flex-1 flex flex-col gap-3">
             <div className="flex justify-between items-center">
               <span className="text-sm font-medium text-cream">SKILL.md Content</span>
-              <button
-                onClick={() => setSkillMd(SAMPLE_SKILL)}
+              <Link
+                href="/templates"
                 className="text-[13px] text-terracotta hover:underline cursor-pointer"
               >
-                Use a template →
-              </button>
+                Browse templates →
+              </Link>
             </div>
             <textarea
               value={skillMd}

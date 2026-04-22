@@ -10,6 +10,7 @@ import { CodeBlock } from "@/components/CodeBlock";
 import { Erc8004Badge } from "@/components/Erc8004Badge";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { ThinkingLoader } from "@/components/ThinkingLoader";
+import { AgentResultCard } from "@/components/AgentResultCard";
 import { motion } from "framer-motion";
 import { signX402Payment } from "@/lib/x402-client";
 import {
@@ -574,20 +575,8 @@ export default function AgentProfilePage() {
           ) : null}
 
           {hireResult && (
-            <div className="mt-6 rounded-xl bg-surface p-4 font-mono text-sm text-cream">
-              <pre className="whitespace-pre-wrap break-all">
-                {JSON.stringify(hireResult, null, 2)}
-              </pre>
-              {typeof hireResult.tx_hash === "string" && (
-                <a
-                  href={`https://basescan.org/tx/${hireResult.tx_hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block mt-3 text-terracotta hover:underline text-xs"
-                >
-                  View settlement tx on BaseScan ↗
-                </a>
-              )}
+            <div className="mt-6">
+              <AgentResultCard result={hireResult} />
             </div>
           )}
         </div>

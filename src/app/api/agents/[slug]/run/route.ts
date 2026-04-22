@@ -24,7 +24,7 @@ export async function POST(
     SELECT a.*, u.id AS owner_user_id
     FROM agents a
     JOIN users u ON a.owner_id = u.id
-    WHERE a.slug = ${slug} AND a.status = 'live'
+    WHERE a.slug = ${slug} AND a.is_live = true
   `;
 
   if (agentRows.length === 0) {
