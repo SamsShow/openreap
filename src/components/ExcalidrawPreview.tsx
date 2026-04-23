@@ -46,15 +46,33 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
   const edges: ParsedEdge[] = [];
   const standaloneText: Unknown[] = [];
 
+  // Two passes: first collect nodes + remember any containerId-bound
+  // text elements so we can attach them to their parent's label. LLM
+  // output often splits node + text into sibling elements rather than
+  // inlining text on the node, which left most boxes empty in the
+  // preview.
+  const pendingText = new Map<string, string>();
+  const unattachedText: Unknown[] = [];
+
   for (const raw of rawElements) {
     if (!isRec(raw) || typeof raw.type !== "string") continue;
 
     if (raw.type === "rectangle" || raw.type === "ellipse" || raw.type === "diamond") {
       const id = typeof raw.id === "string" ? raw.id : `n${nodes.length}`;
+      // Accept text on the node directly, in a nested label object, or
+      // on originalText (Excalidraw's persisted field).
+      const directText =
+        typeof raw.text === "string"
+          ? raw.text
+          : isRec(raw.label) && typeof raw.label.text === "string"
+            ? raw.label.text
+            : typeof raw.originalText === "string"
+              ? raw.originalText
+              : "";
       nodes.push({
         id,
         type: raw.type,
-        text: typeof raw.text === "string" ? raw.text.trim() : "",
+        text: directText.trim(),
         strokeColor:
           typeof raw.strokeColor === "string" ? raw.strokeColor : "#1e1e1e",
         backgroundColor:
@@ -80,8 +98,16 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
 
     if (raw.type === "text") {
       const text = typeof raw.text === "string" ? raw.text : "";
-      if (text) {
-        standaloneText.push({
+      if (!text) continue;
+      // If the LLM emitted a containerId (standard Excalidraw format
+      // for node labels), stash it to attach to the parent node after
+      // this loop finishes.
+      const containerId =
+        typeof raw.containerId === "string" ? raw.containerId : null;
+      if (containerId) {
+        pendingText.set(containerId, text);
+      } else {
+        unattachedText.push({
           type: "text",
           x: typeof raw.x === "number" ? raw.x : 0,
           y: typeof raw.y === "number" ? raw.y : 0,
@@ -91,6 +117,14 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
       }
     }
   }
+
+  // Promote bound text elements to node labels.
+  for (const n of nodes) {
+    if (!n.text && pendingText.has(n.id)) {
+      n.text = pendingText.get(n.id)!.trim();
+    }
+  }
+  standaloneText.push(...unattachedText);
 
   // Size each node to fit its label. Excalidraw's Virgil at 18px needs
   // ~12 px/char and ~30 px of horizontal padding to avoid clipping the
