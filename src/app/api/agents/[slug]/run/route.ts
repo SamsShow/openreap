@@ -432,31 +432,17 @@ async function runOnce(request: NextRequest, slug: string) {
     jobId = (claimRows[0] as { id: string }).id;
   }
 
-  // Step 7 — LLM call with overall timeout budget (270s). Leaves ~30s
-  // under the 300s maxDuration for DB writes + response serialization.
+  // Step 7 — single LLM call, bounded by a 270s budget. No retry loop:
+  // a failed first call almost always means the model is genuinely slow
+  // or unreachable, and re-invoking burns another N seconds on the same
+  // round-trip budget. The llm.ts layer already has its own in-house
+  // attempt + OpenRouter fallback.
   let llmResult;
   let llmErr: unknown = null;
   const llmBudgetMs = 270_000;
   try {
     llmResult = await Promise.race([
-      (async () => {
-        let last: unknown;
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          try {
-            return await callLLM(
-              agent.system_prompt,
-              input,
-              agent.model as ModelKey
-            );
-          } catch (err) {
-            last = err;
-            const msg = err instanceof Error ? err.message : String(err);
-            if (!/rate|429|5\d\d|timeout|ECONN|network/i.test(msg)) break;
-            await new Promise((r) => setTimeout(r, 500));
-          }
-        }
-        throw last;
-      })(),
+      callLLM(agent.system_prompt, input, agent.model as ModelKey),
       new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`LLM budget exceeded after ${llmBudgetMs}ms`)),
