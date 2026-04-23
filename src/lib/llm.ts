@@ -407,14 +407,11 @@ export async function callLLM(
   const isFreeTier = modelId.endsWith(":free");
 
   if (isFreeTier && process.env.INHOUSE_LLM_URL) {
-    try {
-      return await callInhouseLLMWithRetry(systemPrompt, userInput);
-    } catch (err) {
-      console.warn(
-        `[llm] inhouse exhausted retries, falling back to OpenRouter:`,
-        err instanceof Error ? err.message : err
-      );
-    }
+    // No OpenRouter fallback. Free-tier OpenRouter routinely 429s and
+    // served as a silent "success" that looked like an in-house failure
+    // to the user. Agents configured as 'inhouse' should succeed or fail
+    // on the in-house path only — the error the user sees is the real one.
+    return callInhouseLLMWithRetry(systemPrompt, userInput);
   }
 
   return callOpenRouterLLM(systemPrompt, userInput, modelId);
