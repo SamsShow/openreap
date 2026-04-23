@@ -281,9 +281,11 @@ async function callInhouseLLM(
           { role: "system", content: systemPrompt },
           { role: "user", content: userInput },
         ],
-        // response_format intentionally omitted: some LM Studio builds 400
-        // on `json_object` without a schema. The system prompt already
-        // demands JSON-only and parseModelJson tolerates fences/truncation.
+        // Force JSON-object mode. Observed that Gemma 4 E4B in
+        // reasoning mode stops after ~1500 planning tokens without
+        // emitting the JSON — response_format: json_object short-
+        // circuits the planning and forces direct structured output.
+        response_format: { type: "json_object" },
         temperature: 0.1,
         // LM Studio defaults n_predict / max_tokens to ~4096 and was
         // clipping generations mid-scene — Gemma burns ~1700 tokens on
