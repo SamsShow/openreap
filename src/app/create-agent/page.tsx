@@ -6,11 +6,19 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { DashNav } from "@/components/DashNav";
 import { findTemplate } from "@/lib/templates";
+import { AgentCardModal } from "@/components/AgentCardModal";
+import type { AgentCardData } from "@/components/AgentCard";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
 };
+
+function hashCode(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+  return h;
+}
 
 type ParsedAgent = {
   meta: { name: string; price_usdc: number; category: string; model_tier: string; author: string };
@@ -49,6 +57,7 @@ function CreateAgentInner() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [agent, setAgent] = useState<{ slug: string; name: string; status: string } | null>(null);
   const [error, setError] = useState("");
+  const [cardOpen, setCardOpen] = useState(false);
 
   const searchParams = useSearchParams();
 
@@ -136,7 +145,7 @@ function CreateAgentInner() {
       }
 
       setStep(3);
-      setTimeout(() => router.push(`/agents/${agent.slug}`), 2000);
+      setCardOpen(true);
     } catch {
       setError("Network error.");
     } finally {
@@ -145,6 +154,19 @@ function CreateAgentInner() {
   }
 
   const modelLabel = parsed?.meta.model_tier === "pro" ? "Claude Haiku 3.5 (pro)" : "In-House (free)";
+
+  const cardData: AgentCardData | null = parsed && agent
+    ? {
+        id: `${(parsed.meta.category || "A").charAt(0).toUpperCase()}-${String(
+          Math.abs(hashCode(agent.slug)) % 100
+        ).padStart(2, "0")}`,
+        name: parsed.meta.name,
+        tagline: `${parsed.meta.category.toUpperCase()} · AGENT`,
+        priceUsdc: parsed.meta.price_usdc,
+        slug: agent.slug,
+        year: new Date().getFullYear(),
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-bg">
@@ -305,14 +327,22 @@ function CreateAgentInner() {
               <div className="flex items-center justify-between p-8 bg-surface rounded-[20px] border-[1.5px] border-success shadow-[0_8px_40px_rgba(76,175,80,0.15)]">
                 <div>
                   <h3 className="font-heading font-bold text-xl text-cream">Your agent is live!</h3>
-                  <p className="text-sm text-muted mt-1">Redirecting to your agent profile...</p>
+                  <p className="text-sm text-muted mt-1">Your trading card is ready — flip it, share it, then head to the profile.</p>
                 </div>
-                <Link
-                  href={`/agents/${agent.slug}`}
-                  className="px-8 py-3.5 bg-success rounded-full text-[15px] font-medium text-bg"
-                >
-                  View Agent →
-                </Link>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setCardOpen(true)}
+                    className="px-6 py-3.5 rounded-full border border-success text-[15px] font-medium text-success hover:bg-success/10 transition-colors"
+                  >
+                    View Card
+                  </button>
+                  <Link
+                    href={`/agents/${agent.slug}`}
+                    className="px-8 py-3.5 bg-success rounded-full text-[15px] font-medium text-bg"
+                  >
+                    View Agent →
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-between p-8 bg-surface rounded-[20px] border-[1.5px] border-terracotta shadow-[0_8px_40px_#C8553D26]">
@@ -334,6 +364,14 @@ function CreateAgentInner() {
           </motion.div>
         )}
       </div>
+
+      {cardData && (
+        <AgentCardModal
+          open={cardOpen}
+          onClose={() => setCardOpen(false)}
+          data={cardData}
+        />
+      )}
     </div>
   );
 }
