@@ -277,14 +277,9 @@ async function callInhouseLLM(
       },
       body: JSON.stringify({
         model: modelId,
-        // Assistant prefill: seeding the turn with `{` forces the model
-        // to continue from there — no room for planning, reasoning, or
-        // "Let me think..." preambles. Saves 1500-2000 tokens that
-        // Gemma otherwise burns on meta-chatter before emitting JSON.
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userInput },
-          { role: "assistant", content: "{" },
         ],
         temperature: 0.1,
         max_tokens: 16000,
@@ -306,11 +301,7 @@ async function callInhouseLLM(
   const body = (await res.json()) as InhouseChatCompletion;
   const latency_ms = Date.now() - startMs;
 
-  // Re-attach the prefill `{` — some backends strip it from the response
-  // (continuing from the seeded assistant turn), others echo it back.
-  // Only prepend if the response doesn't already start with it.
-  const rawContent = (body.choices[0]?.message?.content ?? "").trim();
-  const raw = rawContent.startsWith("{") ? rawContent : "{" + rawContent;
+  const raw = (body.choices[0]?.message?.content ?? "").trim();
   const content = parseModelJson(raw);
 
   return {
