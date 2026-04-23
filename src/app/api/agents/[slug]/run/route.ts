@@ -209,9 +209,15 @@ async function runOnce(request: NextRequest, slug: string) {
     // return that result instead of bubbling up a revert to the user.
     const reasonLower = (verified.reason ?? "").toLowerCase();
     if (reasonLower.includes("authorization is used or canceled")) {
+      // Poll for up to 4 minutes — matches the ceiling the sibling request
+      // can run under maxDuration=300s. Complex scenes (10+ node Excalidraw,
+      // long prose descriptions) can legitimately take 60-120s on the
+      // in-house model; cutting the poll short makes us surface a spurious
+      // timeout while the sibling is still finishing.
       const pollStart = Date.now();
-      while (Date.now() - pollStart < 45_000) {
-        await new Promise((r) => setTimeout(r, 1500));
+      const pollWindowMs = 240_000;
+      while (Date.now() - pollStart < pollWindowMs) {
+        await new Promise((r) => setTimeout(r, 2_000));
         const rows = await sql`
           SELECT id, output_payload, elsa_tx_hash, llm_model, tokens_used, status
           FROM jobs
