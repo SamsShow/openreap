@@ -720,15 +720,44 @@ function CodeRoasterCard() {
       }
 
       setProgress("Settling via Elsa facilitator + roasting...");
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-payment": signed.header,
-        },
-        body: JSON.stringify({ input: framed }),
-      });
-      const body = (await res.json().catch(() => null)) as RoastResponse | null;
+      // Retry on network error with the same signed x-payment header; the
+      // server-side dedupe maps the retry to the in-flight (or completed)
+      // first call so we never double-charge.
+      let res: Response | null = null;
+      let body: RoastResponse | null = null;
+      let lastNetErr: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            setProgress(
+              `Reconnecting (attempt ${attempt + 1}/3) — your signed payment is still valid...`
+            );
+          }
+          res = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-payment": signed.header,
+            },
+            body: JSON.stringify({ input: framed }),
+          });
+          body = (await res.json().catch(() => null)) as RoastResponse | null;
+          lastNetErr = null;
+          break;
+        } catch (netErr) {
+          lastNetErr = netErr;
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+
+      if (lastNetErr || !res) {
+        throw new X402ClientError(
+          "elsa_unreachable",
+          "Lost connection to the agent",
+          "The request timed out before the response arrived, but your payment was already signed. The server may have completed the job — refresh in a moment and check your dashboard.",
+          { details: lastNetErr instanceof Error ? lastNetErr.message : String(lastNetErr) }
+        );
+      }
       if (!res.ok || !body) {
         throw classifyElsaError(res.status, body);
       }
@@ -1204,15 +1233,49 @@ function DiagramWeaverCard() {
       }
 
       setProgress("Settling via Elsa facilitator + weaving...");
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-payment": signed.header,
-        },
-        body: JSON.stringify({ input: description }),
-      });
-      const body = (await res.json().catch(() => null)) as DiagramResponse | null;
+      // The LLM call can take 30-60s on the in-house model. If the edge
+      // closes the connection mid-response (observed on Vercel, not
+      // localhost), fetch throws TypeError("Failed to fetch") even though
+      // the server completed the job. Retry with the SAME x-payment header
+      // so the server-side in-flight dedupe returns the cached result —
+      // never re-sign, because that burns another $0.50.
+      let res: Response | null = null;
+      let body: DiagramResponse | null = null;
+      let lastNetErr: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            setProgress(
+              `Reconnecting (attempt ${attempt + 1}/3) — your signed payment is still valid...`
+            );
+          }
+          res = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-payment": signed.header,
+            },
+            body: JSON.stringify({ input: description }),
+          });
+          body = (await res.json().catch(() => null)) as DiagramResponse | null;
+          lastNetErr = null;
+          break;
+        } catch (netErr) {
+          lastNetErr = netErr;
+          // Only retry on true network errors (TypeError from fetch); don't
+          // loop on 4xx/5xx which already produced a Response.
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+
+      if (lastNetErr || !res) {
+        throw new X402ClientError(
+          "elsa_unreachable",
+          "Lost connection to the agent",
+          "The request timed out before the response arrived, but your payment was already signed. The server may have completed the job — refresh in a moment and check your dashboard.",
+          { details: lastNetErr instanceof Error ? lastNetErr.message : String(lastNetErr) }
+        );
+      }
       if (!res.ok || !body) {
         throw classifyElsaError(res.status, body);
       }

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
+
+// The in-house LLM can take 30-60s under load, and the facilitator's
+// /settle call adds another few seconds. Extend the function runtime so
+// Vercel's edge doesn't close the connection while we're still streaming
+// the model output.
+export const maxDuration = 300;
 import {
   getPaymentDetails,
   requirementsForNetwork,
