@@ -206,12 +206,12 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
       strokeColor: n.strokeColor,
       backgroundColor: n.backgroundColor,
     };
-    if (n.text) el.label = { text: n.text, fontSize: 18 };
+    if (n.text) el.label = { text: n.text, fontSize: 20 };
     skeleton.push(el);
   }
 
-  // Arrow skeletons — straight line between the two node centers, clipped to
-  // each node's bounding box edge so arrowheads don't overlap the box.
+  // Arrow skeletons. convertToExcalidrawElements accepts start/end by
+  // element id — gives us nice arrow-to-box bindings for free.
   for (const e of validEdges) {
     const a = g.node(e.from) as {
       x: number;
@@ -232,8 +232,10 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
       type: "arrow",
       x: aEdge.x,
       y: aEdge.y,
-      width: bEdge.x - aEdge.x,
-      height: bEdge.y - aEdge.y,
+      points: [
+        [0, 0],
+        [bEdge.x - aEdge.x, bEdge.y - aEdge.y],
+      ],
     });
   }
 
@@ -320,7 +322,7 @@ function snakeLayout(
       strokeColor: n.strokeColor,
       backgroundColor: n.backgroundColor,
     };
-    if (n.text) el.label = { text: n.text, fontSize: 18 };
+    if (n.text) el.label = { text: n.text, fontSize: 20 };
     skeleton.push(el);
   }
 
@@ -345,8 +347,10 @@ function snakeLayout(
       type: "arrow",
       x: aEdge.x,
       y: aEdge.y,
-      width: bEdge.x - aEdge.x,
-      height: bEdge.y - aEdge.y,
+      points: [
+        [0, 0],
+        [bEdge.x - aEdge.x, bEdge.y - aEdge.y],
+      ],
     });
   }
 
