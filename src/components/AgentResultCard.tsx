@@ -1,6 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
+
+const ExcalidrawPreview = dynamic(
+  async () => (await import("./ExcalidrawPreview")).ExcalidrawPreview,
+  { ssr: false, loading: () => <div className="h-[420px]" /> }
+);
 
 type Unknown = Record<string, unknown>;
 
@@ -93,6 +99,23 @@ function OutputBody({ output }: { output: unknown }) {
   // Structured findings list — the contract-review skills return this shape.
   if (Array.isArray(obj.findings)) {
     return <FindingsList findings={obj.findings as Unknown[]} />;
+  }
+
+  // Diagram Weaver (and anything else that returns an Excalidraw scene) —
+  // detect by shape so we don't require a strict type tag.
+  if (
+    (obj.type === "excalidraw" || obj.source === "openreap") &&
+    Array.isArray(obj.elements)
+  ) {
+    return (
+      <ExcalidrawPreview
+        scene={{
+          elements: obj.elements as unknown[],
+          appState: (obj.appState as Record<string, unknown>) ?? {},
+          files: (obj.files as Record<string, unknown>) ?? {},
+        }}
+      />
+    );
   }
 
   // Common "just text" output shapes. Agents vary, so we try a few keys.

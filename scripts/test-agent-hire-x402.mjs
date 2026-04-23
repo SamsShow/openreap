@@ -207,24 +207,10 @@ if (!res.ok) {
   process.exit(1);
 }
 
-console.log(`\n▶ Response:`);
-if (json) {
-  const preview = {
-    job_id: json.job_id,
-    tx_hash: json.tx_hash,
-    model: json.model,
-    tokens: json.tokens,
-    output_preview:
-      typeof json.output === "string"
-        ? json.output.slice(0, 600) + (json.output.length > 600 ? "…" : "")
-        : json.output,
-  };
-  console.log(JSON.stringify(preview, null, 2));
-  if (json.tx_hash) {
-    console.log(`\n  basescan: https://basescan.org/tx/${json.tx_hash}`);
-  }
-} else {
-  console.log(text.slice(0, 1200));
+console.log(`\n▶ Response (raw, first 2000 chars):`);
+console.log(text.slice(0, 2000));
+if (json?.tx_hash) {
+  console.log(`\n  basescan: https://basescan.org/tx/${json.tx_hash}`);
 }
 
 // ---- 5. Post-flight balance ----------------------------------------------

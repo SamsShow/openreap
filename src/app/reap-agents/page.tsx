@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+
+const ExcalidrawPreview = dynamic(
+  async () => (await import("@/components/ExcalidrawPreview")).ExcalidrawPreview,
+  { ssr: false, loading: () => <div className="h-[420px]" /> }
+);
 import { useAccount, useConfig } from "wagmi";
 import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { SmartNav } from "@/components/SmartNav";
@@ -89,6 +95,7 @@ type SwapResult = {
 const AGENT_TABS = [
   { key: "auto-trader", label: "Base Auto-Trader" },
   { key: "code-roaster", label: "Code Roaster" },
+  { key: "diagram-weaver", label: "Diagram Weaver" },
 ] as const;
 type AgentTabKey = (typeof AGENT_TABS)[number]["key"];
 
@@ -460,6 +467,13 @@ export default function ReapAgentsPage() {
         <>
           <CodeRoasterCard />
           <CodeRoasterEndpointDocs />
+        </>
+      )}
+
+      {activeAgent === "diagram-weaver" && (
+        <>
+          <DiagramWeaverCard />
+          <DiagramWeaverEndpointDocs />
         </>
       )}
 
@@ -1050,6 +1064,435 @@ curl -sS -X POST ${endpoint} \\
               probe for the 402 envelope, sign EIP-3009, retry with
               <span className="font-mono"> x-payment</span>. Identical protocol
               to any other Reap agent — swap the slug and price.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-xs text-muted mb-1.5">Endpoint</p>
+          <div className="rounded-xl bg-bg border border-border px-4 py-3 font-mono text-[13px] text-cream break-all">
+            POST {endpoint}
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-xs text-muted mb-1.5">Catalog (machine discovery)</p>
+          <div className="rounded-xl bg-bg border border-border px-4 py-3 font-mono text-[13px] text-cream break-all">
+            GET {catalog}
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-center gap-1 border-b border-border">
+          {(
+            [
+              { key: "js", label: "JavaScript" },
+              { key: "curl", label: "cURL" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-[13px] transition-colors border-b-2 -mb-px ${
+                tab === t.key
+                  ? "text-cream border-terracotta"
+                  : "text-muted border-transparent hover:text-cream"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4">
+          {tab === "js" ? (
+            <CodeBlock code={jsSnippet} label="JavaScript" />
+          ) : (
+            <CodeBlock code={curlSnippet} label="cURL" />
+          )}
+        </div>
+      </motion.div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Diagram Weaver — x402-gated first-party agent. Takes a textual description
+// and returns a renderable Excalidraw scene.
+// ---------------------------------------------------------------------------
+
+type DiagramOutput = {
+  type?: string;
+  version?: number;
+  source?: string;
+  elements?: unknown[];
+  appState?: Record<string, unknown>;
+  files?: Record<string, unknown>;
+  error?: string;
+  raw?: string;
+};
+
+type DiagramResponse = {
+  output?: DiagramOutput;
+  job_id?: string;
+  tx_hash?: string;
+  model?: string;
+  tokens?: number;
+  error?: string;
+  reason?: string;
+};
+
+function DiagramWeaverCard() {
+  const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [result, setResult] = useState<DiagramResponse | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  const { address, isConnected } = useAccount();
+  const wagmiConfig = useConfig();
+  const { openConnectModal } = useConnectModal();
+
+  async function handleWeave() {
+    if (!isConnected || !address) {
+      setError(
+        new X402ClientError(
+          "wallet_not_connected",
+          "Connect your wallet",
+          "You need a connected wallet to pay the $0.10 USDC Reap x402 fee."
+        )
+      );
+      return;
+    }
+    if (!description.trim()) return;
+
+    setError(null);
+    setResult(null);
+    setLoading(true);
+    setProgress("Fetching x402 requirements...");
+
+    const endpoint = "/api/agents/diagram-weaver/run";
+
+    try {
+      const probe = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: description }),
+      });
+      const probeBody = (await probe.json().catch(() => null)) as unknown;
+      if (probe.status !== 402) {
+        throw classifyElsaError(probe.status, probeBody);
+      }
+      const envelope = probeBody as {
+        accepts?: PaymentRequirements[];
+      } | null;
+      const requirements = envelope?.accepts?.[0];
+      if (!requirements) {
+        throw new X402ClientError(
+          "elsa_rejected",
+          "402 response was incomplete",
+          "Diagram Weaver returned HTTP 402 but no payment requirements.",
+          { details: probeBody }
+        );
+      }
+
+      setProgress("Sign the $0.10 payment in your wallet...");
+      let signed;
+      try {
+        signed = await signX402Payment(wagmiConfig, address, requirements);
+      } catch (err) {
+        throw classifySignError(err);
+      }
+
+      setProgress("Settling via Elsa facilitator + weaving...");
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-payment": signed.header,
+        },
+        body: JSON.stringify({ input: description }),
+      });
+      const body = (await res.json().catch(() => null)) as DiagramResponse | null;
+      if (!res.ok || !body) {
+        throw classifyElsaError(res.status, body);
+      }
+      setResult(body);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setProgress("");
+      setLoading(false);
+    }
+  }
+
+  const scene = result?.output;
+  const hasScene =
+    !!scene && Array.isArray(scene.elements) && scene.elements.length > 0;
+
+  return (
+    <section className="px-16 pb-4 max-w-[1312px] mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+        className="rounded-[20px] bg-surface border border-border p-10"
+      >
+        <div className="flex gap-10 flex-wrap">
+          <div className="flex-1 min-w-[320px]">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-heading font-bold text-[28px] text-cream">
+                Diagram Weaver
+              </h2>
+              <span className="bg-terracotta/15 text-terracotta text-[13px] font-medium px-3 py-1 rounded-full">
+                Reap Agent
+              </span>
+              <span className="bg-success/15 text-success text-[13px] font-medium px-3 py-1 rounded-full">
+                Live
+              </span>
+            </div>
+            <p className="text-[17px] leading-7 text-muted mt-4">
+              Describe a flow, architecture, or process in plain English —
+              Diagram Weaver returns a valid Excalidraw JSON scene. Humans see a
+              live preview; other agents consume the JSON directly. $0.10 USDC
+              via Elsa x402 on Base mainnet.
+            </p>
+            <div className="flex gap-10 mt-8">
+              {[
+                { value: "$0.10", label: "Elsa x402 (mainnet)" },
+                { value: "inhouse", label: "LLM backend" },
+                { value: "Excalidraw", label: "structured output" },
+              ].map((stat) => (
+                <div key={stat.label}>
+                  <p className="font-heading font-bold text-[28px] text-cream">
+                    {stat.value}
+                  </p>
+                  <p className="text-sm text-muted mt-1">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-[460px] flex-shrink-0 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-heading font-bold text-lg text-cream">
+                Try It Now
+              </h3>
+              <ConnectButton
+                accountStatus={{
+                  smallScreen: "avatar",
+                  largeScreen: "full",
+                }}
+                chainStatus="icon"
+                showBalance={false}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted mb-1 block">
+                Description ({description.length}/4000)
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) =>
+                  setDescription(e.target.value.slice(0, 4000))
+                }
+                placeholder={
+                  "User clicks Sign Up → frontend POSTs to /api/auth/signup → server validates email, hashes password, writes to users table → issues a JWT → sets httpOnly cookie → redirects to /dashboard"
+                }
+                rows={8}
+                className="w-full px-3 py-2.5 rounded-xl bg-bg border border-border text-sm text-cream outline-none focus:border-terracotta/50"
+              />
+            </div>
+
+            <button
+              onClick={
+                !isConnected ? () => openConnectModal?.() : handleWeave
+              }
+              disabled={loading || (isConnected && !description.trim())}
+              className="w-full py-3 rounded-full bg-terracotta text-[15px] font-medium text-off-white shadow-[0_0_24px_#C8553D4D] hover:shadow-[0_0_32px_#C8553D66] transition-shadow disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {loading
+                ? progress || "Working..."
+                : !isConnected
+                  ? "Connect Wallet"
+                  : "Weave diagram — $0.10 via Elsa x402"}
+            </button>
+
+            <p className="text-xs text-muted text-center">
+              $0.10 USDC settled on Base mainnet. No other fees.
+            </p>
+          </div>
+        </div>
+
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 pt-8 border-t border-border"
+          >
+            <div className="rounded-xl bg-surface/60 border border-border p-5">
+              <ThinkingLoader sublabel={progress || "Waiting for the agent..."} />
+            </div>
+          </motion.div>
+        )}
+
+        {!loading && (result || error !== null) && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 pt-8 border-t border-border"
+          >
+            {error ? (
+              <ErrorCard
+                error={error}
+                onRetry={handleWeave}
+                fundingAddress={address as `0x${string}` | undefined}
+              />
+            ) : null}
+            {result && (
+              <div className="flex flex-col gap-4">
+                {scene?.error === "output_invalid" && (
+                  <div className="rounded-xl bg-terracotta/10 border border-terracotta/30 p-4">
+                    <p className="text-xs uppercase tracking-wider text-terracotta">
+                      Model output couldn&apos;t be parsed
+                    </p>
+                    <p className="text-sm text-cream mt-1">
+                      The LLM returned something that wasn&apos;t valid JSON.
+                      Raw output below.
+                    </p>
+                    {scene.raw && (
+                      <pre className="whitespace-pre-wrap break-all font-mono text-[12px] text-cream mt-3 bg-bg p-3 rounded-lg">
+                        {scene.raw}
+                      </pre>
+                    )}
+                  </div>
+                )}
+                {hasScene && scene && (
+                  <div>
+                    <p className="text-xs text-muted uppercase tracking-wider mb-2">
+                      Preview
+                    </p>
+                    <ExcalidrawPreview
+                      scene={{
+                        elements: scene.elements as unknown[],
+                        appState: scene.appState ?? {},
+                        files: scene.files ?? {},
+                      }}
+                    />
+                  </div>
+                )}
+                {hasScene && (
+                  <details className="rounded-xl bg-bg border border-border p-4">
+                    <summary className="text-xs text-muted uppercase tracking-wider cursor-pointer">
+                      Raw Excalidraw JSON
+                    </summary>
+                    <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-cream mt-3 max-h-[240px] overflow-auto">
+                      {JSON.stringify(scene, null, 2)}
+                    </pre>
+                  </details>
+                )}
+                {result.tx_hash && (
+                  <div className="text-sm">
+                    <span className="text-muted">Reap x402 (mainnet): </span>
+                    <a
+                      href={`https://basescan.org/tx/${result.tx_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-cream font-mono hover:text-terracotta break-all"
+                    >
+                      {result.tx_hash}
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </motion.div>
+    </section>
+  );
+}
+
+function DiagramWeaverEndpointDocs() {
+  const [tab, setTab] = useState<"curl" | "js">("js");
+  const apiBase =
+    (typeof window !== "undefined" && window.location.origin) ||
+    "https://openreap.ai";
+  const endpoint = `${apiBase}/api/agents/diagram-weaver/run`;
+  const catalog = `${apiBase}/api/agents/catalog`;
+
+  const jsSnippet = `// 1. Discover Diagram Weaver + its x402 price
+const { agents } = await (await fetch("${catalog}")).json();
+const weaver = agents.find(a => a.slug === "diagram-weaver");
+// weaver.price_usdc === 0.10, weaver.resource is the endpoint
+
+// 2. Probe for the 402 envelope
+const probe = await fetch(weaver.resource, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ input: yourDescription }),
+});
+const { accepts } = await probe.json();
+
+// 3. Sign EIP-3009 TransferWithAuthorization against accepts[0] (USDC on Base)
+const xPayment = await signX402Payment(accepts[0]);
+
+// 4. Retry with x-payment; the server settles via Elsa and runs the model
+const res = await fetch(weaver.resource, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-payment": xPayment,
+  },
+  body: JSON.stringify({ input: yourDescription }),
+});
+
+const { output, tx_hash } = await res.json();
+// output = { type: "excalidraw", version: 2, source: "openreap",
+//            elements: [...], appState: {...}, files: {} }
+// Feed output directly into @excalidraw/excalidraw or any Excalidraw importer.`;
+
+  const curlSnippet = `# Discover
+curl -sS ${catalog} | jq '.agents[] | select(.slug=="diagram-weaver")'
+
+# Hire (two-step x402 dance)
+curl -sS -X POST ${endpoint} \\
+  -H 'Content-Type: application/json' \\
+  -d '{"input":"User signs up -> server issues JWT -> client stores cookie"}'
+# -> HTTP 402 + { accepts: [{ scheme, network, payTo, asset, maxAmountRequired, ... }] }
+
+# Sign EIP-3009 off-band, then:
+curl -sS -X POST ${endpoint} \\
+  -H 'Content-Type: application/json' \\
+  -H "x-payment: $X_PAYMENT_BASE64" \\
+  -d '{"input":"User signs up -> server issues JWT -> client stores cookie"}'
+# -> { output: { type:"excalidraw", elements:[...], appState:{...}, files:{} }, tx_hash, model, tokens }`;
+
+  return (
+    <section className="px-16 pb-16 pt-4 max-w-[1312px] mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+        className="rounded-[20px] bg-surface border border-border p-10"
+      >
+        <div className="flex items-start justify-between gap-6 flex-wrap">
+          <div>
+            <p className="text-[13px] font-medium tracking-[0.06em] uppercase text-terracotta mb-2">
+              x402 Endpoint · for other agents
+            </p>
+            <h2 className="font-heading font-bold text-[22px] text-cream">
+              Hire Diagram Weaver from your own agent
+            </h2>
+            <p className="text-sm text-muted mt-2 max-w-[640px]">
+              Discover via <span className="font-mono">/api/agents/catalog</span>,
+              probe for the 402 envelope, sign EIP-3009, retry with
+              <span className="font-mono"> x-payment</span>. The response is a
+              machine-readable Excalidraw scene — pipe it into
+              <span className="font-mono"> @excalidraw/excalidraw</span> or any
+              Excalidraw importer.
             </p>
           </div>
         </div>
