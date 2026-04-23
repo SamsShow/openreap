@@ -1226,10 +1226,9 @@ function DiagramWeaverCard() {
           });
           body = (await res.json().catch(() => null)) as DiagramResponse | null;
           lastNetErr = null;
-          if (res.status >= 500 && attempt < 2) {
-            await new Promise((r) => setTimeout(r, 2000));
-            continue;
-          }
+          // Don't retry on 5xx — the server has already committed to a
+          // terminal state (failed / sibling_job_failed) and retrying just
+          // produces duplicate traffic and confuses the dedupe layer.
           break;
         } catch (netErr) {
           lastNetErr = netErr;
@@ -1338,17 +1337,16 @@ function DiagramWeaverCard() {
           });
           body = (await res.json().catch(() => null)) as DiagramResponse | null;
           lastNetErr = null;
-          // Retry on 5xx (Vercel edge 502/504 mid-flight). Server-side DB
-          // dedupe returns the cached response immediately on the retry.
-          if (res.status >= 500 && attempt < 2) {
-            await new Promise((r) => setTimeout(r, 2000));
-            continue;
-          }
+          // Don't retry on 5xx — the server has already committed to a
+          // terminal state and a second call only races against the dedupe
+          // layer. The user can hit "Try again" (which reuses the cached
+          // signature) if they want another attempt.
           break;
         } catch (netErr) {
           lastNetErr = netErr;
-          // Only retry on true network errors (TypeError from fetch); don't
-          // loop on 4xx/5xx which already produced a Response.
+          // Only retry on true network errors (TypeError from fetch) —
+          // those indicate the edge dropped the connection mid-flight,
+          // which is exactly what the server-side dedupe is designed for.
           if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
         }
       }
