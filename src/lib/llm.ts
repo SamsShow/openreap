@@ -277,20 +277,16 @@ async function callInhouseLLM(
       },
       body: JSON.stringify({
         model: modelId,
+        // Assistant prefill: seeding the turn with `{` forces the model
+        // to continue from there — no room for planning, reasoning, or
+        // "Let me think..." preambles. Saves 1500-2000 tokens that
+        // Gemma otherwise burns on meta-chatter before emitting JSON.
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userInput },
+          { role: "assistant", content: "{" },
         ],
-        // response_format intentionally omitted: LM Studio's structured
-        // output path breaks generation on this build. System prompt
-        // already demands JSON-only.
         temperature: 0.1,
-        // LM Studio defaults n_predict / max_tokens to ~4096 and was
-        // clipping generations mid-scene — Gemma burns ~1700 tokens on
-        // reasoning before emitting JSON, leaving ~2300 for the output.
-        // Set explicitly well above the 6-7k we've observed on large
-        // multi-flow diagrams. The model will still stop naturally on
-        // its own finish_reason when done.
         max_tokens: 16000,
       }),
       signal: controller.signal,
@@ -310,7 +306,11 @@ async function callInhouseLLM(
   const body = (await res.json()) as InhouseChatCompletion;
   const latency_ms = Date.now() - startMs;
 
-  const raw = (body.choices[0]?.message?.content ?? "").trim();
+  // Re-attach the prefill `{` — some backends strip it from the response
+  // (continuing from the seeded assistant turn), others echo it back.
+  // Only prepend if the response doesn't already start with it.
+  const rawContent = (body.choices[0]?.message?.content ?? "").trim();
+  const raw = rawContent.startsWith("{") ? rawContent : "{" + rawContent;
   const content = parseModelJson(raw);
 
   return {
