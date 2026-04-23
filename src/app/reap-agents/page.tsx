@@ -1206,41 +1206,24 @@ function DiagramWeaverCard() {
     const endpoint = "/api/agents/diagram-weaver/run";
     setProgress("Resubmitting your signed payment...");
     try {
-      let res: Response | null = null;
+      let res: Response;
       let body: DiagramResponse | null = null;
-      let lastNetErr: unknown = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          if (attempt > 0) {
-            setProgress(
-              `Reconnecting (attempt ${attempt + 1}/3) — your signed payment is still valid...`
-            );
-          }
-          res = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-payment": header,
-            },
-            body: JSON.stringify({ input }),
-          });
-          body = (await res.json().catch(() => null)) as DiagramResponse | null;
-          lastNetErr = null;
-          // Don't retry on 5xx — the server has already committed to a
-          // terminal state (failed / sibling_job_failed) and retrying just
-          // produces duplicate traffic and confuses the dedupe layer.
-          break;
-        } catch (netErr) {
-          lastNetErr = netErr;
-          if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
-        }
-      }
-      if (lastNetErr || !res) {
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-payment": header,
+          },
+          body: JSON.stringify({ input }),
+        });
+        body = (await res.json().catch(() => null)) as DiagramResponse | null;
+      } catch (netErr) {
         throw new X402ClientError(
           "elsa_unreachable",
           "Lost connection to the agent",
-          "Your signed payment is still valid — try again or refresh the page.",
-          { details: lastNetErr instanceof Error ? lastNetErr.message : String(lastNetErr) }
+          "Your signed payment is still valid — click Try again to resume (the server will recover the job).",
+          { details: netErr instanceof Error ? netErr.message : String(netErr) }
         );
       }
       if (!res.ok || !body) {
@@ -1311,52 +1294,28 @@ function DiagramWeaverCard() {
       setLastSigned({ header: signed.header, input: description });
 
       setProgress("Settling via Elsa facilitator + weaving...");
-      // The LLM call can take 30-60s on the in-house model. If the edge
-      // closes the connection mid-response (observed on Vercel, not
-      // localhost), fetch throws TypeError("Failed to fetch") even though
-      // the server completed the job. Retry with the SAME x-payment header
-      // so the server-side in-flight dedupe returns the cached result —
-      // never re-sign, because that burns another $0.50.
-      let res: Response | null = null;
+      // Single attempt. Each call kicks off a 270s LLM budget on the
+      // server; client-side retries would pile on additional runs.
+      // If fetch throws (edge drop), the user clicks "Try again" — the
+      // server's failed-row recovery picks up from the same signature.
+      let res: Response;
       let body: DiagramResponse | null = null;
-      let lastNetErr: unknown = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          if (attempt > 0) {
-            setProgress(
-              `Reconnecting (attempt ${attempt + 1}/3) — your signed payment is still valid...`
-            );
-          }
-          res = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-payment": signed.header,
-            },
-            body: JSON.stringify({ input: description }),
-          });
-          body = (await res.json().catch(() => null)) as DiagramResponse | null;
-          lastNetErr = null;
-          // Don't retry on 5xx — the server has already committed to a
-          // terminal state and a second call only races against the dedupe
-          // layer. The user can hit "Try again" (which reuses the cached
-          // signature) if they want another attempt.
-          break;
-        } catch (netErr) {
-          lastNetErr = netErr;
-          // Only retry on true network errors (TypeError from fetch) —
-          // those indicate the edge dropped the connection mid-flight,
-          // which is exactly what the server-side dedupe is designed for.
-          if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
-        }
-      }
-
-      if (lastNetErr || !res) {
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-payment": signed.header,
+          },
+          body: JSON.stringify({ input: description }),
+        });
+        body = (await res.json().catch(() => null)) as DiagramResponse | null;
+      } catch (netErr) {
         throw new X402ClientError(
           "elsa_unreachable",
           "Lost connection to the agent",
-          "The request timed out before the response arrived, but your payment was already signed. The server may have completed the job — refresh in a moment and check your dashboard.",
-          { details: lastNetErr instanceof Error ? lastNetErr.message : String(lastNetErr) }
+          "The edge dropped the connection mid-flight. Your signature is cached — click Try again to resume; the server will recover the in-progress job.",
+          { details: netErr instanceof Error ? netErr.message : String(netErr) }
         );
       }
       if (!res.ok || !body) {
