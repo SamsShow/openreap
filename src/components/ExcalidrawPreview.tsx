@@ -137,6 +137,18 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
 
   for (const e of validEdges) g.setEdge(e.from, e.to);
 
+  // If the graph is a pure linear chain (every node has ≤1 in/out edge) and
+  // long enough that LR dagre would produce an unreadable ribbon, bypass
+  // dagre and snake-wrap rows instead. Arrows between row ends turn back,
+  // giving the preview a 2D shape that fills the canvas.
+  const CHAIN_WRAP_THRESHOLD = 6;
+  if (
+    nodes.length > CHAIN_WRAP_THRESHOLD &&
+    isLinearChain(nodes, validEdges)
+  ) {
+    return snakeLayout(nodes, validEdges, sizeFor, standaloneText);
+  }
+
   dagre.layout(g);
 
   const skeleton: Unknown[] = [];
@@ -180,6 +192,119 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
       height: number;
     };
     if (!a || !b) continue;
+    const aEdge = edgePoint(a, b.x, b.y);
+    const bEdge = edgePoint(b, a.x, a.y);
+    skeleton.push({
+      type: "arrow",
+      x: aEdge.x,
+      y: aEdge.y,
+      width: bEdge.x - aEdge.x,
+      height: bEdge.y - aEdge.y,
+    });
+  }
+
+  return [...skeleton, ...standaloneText];
+}
+
+function isLinearChain(nodes: ParsedNode[], edges: ParsedEdge[]): boolean {
+  if (nodes.length < 2) return false;
+  if (edges.length !== nodes.length - 1) return false;
+  const outDeg = new Map<string, number>();
+  const inDeg = new Map<string, number>();
+  for (const e of edges) {
+    outDeg.set(e.from, (outDeg.get(e.from) ?? 0) + 1);
+    inDeg.set(e.to, (inDeg.get(e.to) ?? 0) + 1);
+  }
+  for (const n of nodes) {
+    if ((outDeg.get(n.id) ?? 0) > 1) return false;
+    if ((inDeg.get(n.id) ?? 0) > 1) return false;
+  }
+  return true;
+}
+
+/**
+ * Snake-wrap a linear chain into rows. Row width is driven by the widest
+ * node so long labels don't clip. Rows alternate LR / RL so the chain
+ * reads continuously — arrows between end-of-row and start-of-next-row
+ * route vertically via a midpoint.
+ */
+function snakeLayout(
+  nodes: ParsedNode[],
+  edges: ParsedEdge[],
+  sizeFor: (n: ParsedNode) => { width: number; height: number },
+  standaloneText: Unknown[]
+): Unknown[] {
+  // Walk edges to determine actual chain order (can't rely on emission).
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const next = new Map(edges.map((e) => [e.from, e.to]));
+  const hasIncoming = new Set(edges.map((e) => e.to));
+  const start = nodes.find((n) => !hasIncoming.has(n.id)) ?? nodes[0];
+  const chain: ParsedNode[] = [];
+  let cursor: ParsedNode | undefined = start;
+  const seen = new Set<string>();
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    chain.push(cursor);
+    const nextId = next.get(cursor.id);
+    cursor = nextId ? byId.get(nextId) : undefined;
+  }
+  // In case of a broken walk, append the leftovers so no node disappears.
+  for (const n of nodes) if (!seen.has(n.id)) chain.push(n);
+
+  const sizes = chain.map(sizeFor);
+  const maxWidth = Math.max(...sizes.map((s) => s.width));
+  const maxHeight = Math.max(...sizes.map((s) => s.height));
+  const gapX = 80;
+  const gapY = 120;
+
+  const cols = Math.min(5, Math.max(3, Math.ceil(Math.sqrt(chain.length))));
+  const cellW = maxWidth + gapX;
+  const cellH = maxHeight + gapY;
+
+  const positions = chain.map((_, i) => {
+    const row = Math.floor(i / cols);
+    const colInRow = i % cols;
+    const col = row % 2 === 0 ? colInRow : cols - 1 - colInRow;
+    return {
+      cx: col * cellW + maxWidth / 2 + 40,
+      cy: row * cellH + maxHeight / 2 + 40,
+    };
+  });
+
+  const skeleton: Unknown[] = [];
+
+  for (let i = 0; i < chain.length; i += 1) {
+    const n = chain[i];
+    const { width, height } = sizes[i];
+    const { cx, cy } = positions[i];
+    const el: Unknown = {
+      type: n.type,
+      x: cx - width / 2,
+      y: cy - height / 2,
+      width,
+      height,
+      strokeColor: n.strokeColor,
+      backgroundColor: n.backgroundColor,
+    };
+    if (n.text) el.label = { text: n.text, fontSize: 18 };
+    skeleton.push(el);
+  }
+
+  for (let i = 0; i < chain.length - 1; i += 1) {
+    const aSize = sizes[i];
+    const bSize = sizes[i + 1];
+    const a = {
+      x: positions[i].cx,
+      y: positions[i].cy,
+      width: aSize.width,
+      height: aSize.height,
+    };
+    const b = {
+      x: positions[i + 1].cx,
+      y: positions[i + 1].cy,
+      width: bSize.width,
+      height: bSize.height,
+    };
     const aEdge = edgePoint(a, b.x, b.y);
     const bEdge = edgePoint(b, a.x, a.y);
     skeleton.push({
