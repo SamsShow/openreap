@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 
-// The in-house LLM can take 30-60s under load, and the facilitator's
-// /settle call adds another few seconds. Extend the function runtime so
-// Vercel's edge doesn't close the connection while we're still streaming
-// the model output.
-export const maxDuration = 300;
+// Large multi-flow diagrams on the in-house Gemma can produce 6k+
+// tokens and take 5-10 minutes to stream over ngrok. Vercel Fluid
+// Compute caps maxDuration at 800s on Pro (clamped to 300s on Hobby).
+// Go to the ceiling — we'd rather occupy the function than return
+// half-baked failures.
+export const maxDuration = 800;
 import {
   getPaymentDetails,
   requirementsForNetwork,
@@ -382,30 +383,62 @@ async function runOnce(request: NextRequest, slug: string) {
     RETURNING id
   `;
 
+  let jobId: string;
   if (claimRows.length === 0) {
-    // Another instance already claimed this fingerprint — either finished
-    // already or still running. Wait for its outcome.
-    const cached = await waitForSiblingJob(paymentFp);
-    if (cached) return cached;
-    return NextResponse.json(
-      {
-        error: "replay_recovery_timeout",
-        reason:
-          "A sibling request is handling this payment but didn't complete in time.",
-      },
-      { status: 504 }
-    );
+    // Fingerprint conflict — a previous (or concurrent) request owns this
+    // payment. Decide what to do based on that row's status.
+    const existingRows = await sql`
+      SELECT id, status FROM jobs
+      WHERE payment_fingerprint = ${paymentFp}
+      LIMIT 1
+    `;
+    const existing = existingRows[0] as
+      | { id: string; status: string }
+      | undefined;
+
+    if (existing?.status === "completed") {
+      const cached = await waitForSiblingJob(paymentFp);
+      if (cached) return cached;
+      return NextResponse.json(
+        { error: "replay_recovery_timeout" },
+        { status: 504 }
+      );
+    }
+
+    if (existing?.status === "failed") {
+      // User already paid on-chain but the LLM died on the previous
+      // attempt. They're entitled to a retry on the same signature —
+      // take ownership of the row and re-run the LLM.
+      console.info(
+        `[agent-run] recovering failed job ${existing.id.slice(0, 8)}… for fingerprint retry`
+      );
+      await sql`
+        UPDATE jobs SET status='processing', updated_at=now()
+        WHERE id = ${existing.id} AND status = 'failed'
+      `;
+      jobId = existing.id;
+    } else {
+      // status='processing' — a concurrent sibling still owns it. Wait.
+      const cached = await waitForSiblingJob(paymentFp);
+      if (cached) return cached;
+      return NextResponse.json(
+        {
+          error: "replay_recovery_timeout",
+          reason:
+            "A sibling request is handling this payment but didn't complete in time.",
+        },
+        { status: 504 }
+      );
+    }
+  } else {
+    jobId = (claimRows[0] as { id: string }).id;
   }
 
-  const jobId = (claimRows[0] as { id: string }).id;
-
-  // Step 7 — LLM call with overall timeout budget (270s). Leaves ~30s under
-  // the 300s maxDuration for DB writes + response. In-house Gemma over
-  // ngrok regularly produces 5k+ token diagrams and needs the full window;
-  // budget-exceeded marks the row 'failed' so sibling retries exit fast.
+  // Step 7 — LLM call with overall timeout budget (770s). Leaves ~30s
+  // under the 800s maxDuration for DB writes + response serialization.
   let llmResult;
   let llmErr: unknown = null;
-  const llmBudgetMs = 270_000;
+  const llmBudgetMs = 770_000;
   try {
     llmResult = await Promise.race([
       (async () => {
