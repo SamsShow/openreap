@@ -8,7 +8,7 @@
  *   { type: "excalidraw", version: 2, source: "openreap",
  *     elements: [...], appState: {...}, files: {} }
  *
- * Priced at $0.10 (price_cents = 10) paid via x402 through Elsa's
+ * Priced at $0.50 (price_cents = 50) paid via x402 through Elsa's
  * facilitator. Model is "inhouse" — free-tier router in src/lib/llm.ts
  * picks up INHOUSE_LLM_URL when set, with OpenRouter fallback. Keeps all
  * revenue with Reap.
@@ -79,7 +79,7 @@ const PARSED_SKILL = {
     name: "Diagram Weaver",
     version: "1.0",
     author: "Reap",
-    price_usdc: 0.1,
+    price_usdc: 0.50,
     category: "other",
     model_tier: "pro",
   },
@@ -116,7 +116,7 @@ const SKILL_MD = `# Diagram Weaver
 
 **What it does:** Generates Excalidraw JSON scenes from textual descriptions. Downstream agents get structured data; humans see a live preview.
 
-**Price:** $0.10 USDC per call on Base mainnet via Elsa x402.
+**Price:** $0.50 USDC per call on Base mainnet via Elsa x402.
 
 **Input:** \`{ input: "<freeform description of the diagram you want>" }\`
 
@@ -159,9 +159,9 @@ async function run() {
       ${ownerId},
       'diagram-weaver',
       'Diagram Weaver',
-      'Turns plain-English process, architecture, or flow descriptions into a valid Excalidraw JSON scene. Returns {type:"excalidraw", elements, appState, files} so downstream agents can render or embed the diagram directly. $0.10 USDC per call via x402 on Base mainnet.',
+      'Turns plain-English process, architecture, or flow descriptions into a valid Excalidraw JSON scene. Returns {type:"excalidraw", elements, appState, files} so downstream agents can render or embed the diagram directly. $0.50 USDC per call via x402 on Base mainnet.',
       'other',
-      10,
+      50,
       'inhouse',
       ${SKILL_MD},
       true,
@@ -189,7 +189,7 @@ async function run() {
   `;
 
   console.log(
-    "  ✓ diagram-weaver seeded (price $0.10, model=inhouse, is_reap_agent=true)"
+    "  ✓ diagram-weaver seeded (price $0.50, model=inhouse, is_reap_agent=true)"
   );
   console.log(
     "\nDone. POST /api/agents/diagram-weaver/run returns HTTP 402 with x402 requirements."

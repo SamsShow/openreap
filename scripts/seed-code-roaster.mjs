@@ -3,8 +3,8 @@
  *
  *   node --env-file=.env.local scripts/seed-code-roaster.mjs
  *
- * Creates or updates the `code-roaster` row in `agents`. Price is $0.01
- * (price_cents = 1) paid via x402 through Elsa's facilitator. Model is
+ * Creates or updates the `code-roaster` row in `agents`. Price is $0.50
+ * (price_cents = 50) paid via x402 through Elsa's facilitator. Model is
  * "inhouse" — free-tier router in src/lib/llm.ts picks up INHOUSE_LLM_URL
  * when set, with OpenRouter fallback.
  *
@@ -47,7 +47,7 @@ const PARSED_SKILL = {
     name: "Code Roaster",
     version: "1.0",
     author: "Reap",
-    price_usdc: 0.01,
+    price_usdc: 0.50,
     category: "dev",
     model_tier: "standard",
   },
@@ -88,13 +88,13 @@ const SKILL_MD = `# Code Roaster
 
 **What it does:** Savage-but-constructive code review for any language.
 
-**Price:** $0.01 USDC per call on Base mainnet via Elsa x402.
+**Price:** $0.50 USDC per call on Base mainnet via Elsa x402.
 
 **Input:** \`{ input: "<your code, up to 8000 chars>" }\`
 
 **Output:** JSON with \`verdict\`, \`roast\`, \`sins[]\`, \`redemption\`.
 
-Powered by the Reap in-house LLM — free to us, so all $0.01 stays with Reap.
+Powered by the Reap in-house LLM — free to us, so all $0.50 stays with Reap.
 `;
 
 async function run() {
@@ -129,9 +129,9 @@ async function run() {
       ${ownerId},
       'code-roaster',
       'Code Roaster',
-      'Savage-but-constructive code review. Paste code, get roasted. $0.01 USDC per call via Elsa x402 on Base mainnet. Powered by Reap in-house LLM.',
+      'Savage-but-constructive code review. Paste code, get roasted. $0.50 USDC per call via Elsa x402 on Base mainnet. Powered by Reap in-house LLM.',
       'dev',
-      1,
+      50,
       'inhouse',
       ${SKILL_MD},
       true,
@@ -158,7 +158,7 @@ async function run() {
       updated_at = now()
   `;
 
-  console.log("  ✓ code-roaster seeded (price $0.01, model=inhouse, is_reap_agent=true)");
+  console.log("  ✓ code-roaster seeded (price $0.50, model=inhouse, is_reap_agent=true)");
   console.log("\nDone. POST /api/agents/code-roaster/run returns HTTP 402 with x402 requirements.");
 }
 

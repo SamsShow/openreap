@@ -670,7 +670,7 @@ function CodeRoasterCard() {
         new X402ClientError(
           "wallet_not_connected",
           "Connect your wallet",
-          "You need a connected wallet to pay the $0.01 USDC Reap x402 fee."
+          "You need a connected wallet to pay the $0.50 USDC Reap x402 fee."
         )
       );
       return;
@@ -711,7 +711,7 @@ function CodeRoasterCard() {
         );
       }
 
-      setProgress("Sign the $0.01 payment in your wallet...");
+      setProgress("Sign the $0.50 payment in your wallet...");
       let signed;
       try {
         signed = await signX402Payment(wagmiConfig, address, requirements);
@@ -765,12 +765,12 @@ function CodeRoasterCard() {
             </div>
             <p className="text-[17px] leading-7 text-muted mt-4">
               Paste code, get roasted. Savage-but-constructive review of any
-              language. $0.01 USDC via Elsa x402 on Base mainnet — powered by
+              language. $0.50 USDC via Elsa x402 on Base mainnet — powered by
               the Reap in-house LLM, so every cent stays with Reap.
             </p>
             <div className="flex gap-10 mt-8">
               {[
-                { value: "$0.01", label: "Elsa x402 (mainnet)" },
+                { value: "$0.50", label: "Elsa x402 (mainnet)" },
                 { value: "inhouse", label: "LLM backend" },
                 { value: "JSON", label: "structured output" },
               ].map((stat) => (
@@ -849,11 +849,11 @@ function CodeRoasterCard() {
                 ? progress || "Working..."
                 : !isConnected
                   ? "Connect Wallet"
-                  : "Roast it — $0.01 via Elsa x402"}
+                  : "Roast it — $0.50 via Elsa x402"}
             </button>
 
             <p className="text-xs text-muted text-center">
-              $0.01 USDC settled on Base mainnet. No other fees.
+              $0.50 USDC settled on Base mainnet. No other fees.
             </p>
           </div>
         </div>
@@ -1000,7 +1000,7 @@ function CodeRoasterEndpointDocs() {
   const jsSnippet = `// 1. Discover the Code Roaster + its x402 price
 const { agents } = await (await fetch("${catalog}")).json();
 const roaster = agents.find(a => a.slug === "code-roaster");
-// roaster.price_usdc === 0.01, roaster.resource is the endpoint
+// roaster.price_usdc === 0.50, roaster.resource is the endpoint
 
 // 2. Probe for the 402 envelope
 const probe = await fetch(roaster.resource, {
@@ -1158,7 +1158,7 @@ function DiagramWeaverCard() {
         new X402ClientError(
           "wallet_not_connected",
           "Connect your wallet",
-          "You need a connected wallet to pay the $0.10 USDC Reap x402 fee."
+          "You need a connected wallet to pay the $0.50 USDC Reap x402 fee."
         )
       );
       return;
@@ -1195,7 +1195,7 @@ function DiagramWeaverCard() {
         );
       }
 
-      setProgress("Sign the $0.10 payment in your wallet...");
+      setProgress("Sign the $0.50 payment in your wallet...");
       let signed;
       try {
         signed = await signX402Payment(wagmiConfig, address, requirements);
@@ -1254,12 +1254,12 @@ function DiagramWeaverCard() {
             <p className="text-[17px] leading-7 text-muted mt-4">
               Describe a flow, architecture, or process in plain English —
               Diagram Weaver returns a valid Excalidraw JSON scene. Humans see a
-              live preview; other agents consume the JSON directly. $0.10 USDC
+              live preview; other agents consume the JSON directly. $0.50 USDC
               via Elsa x402 on Base mainnet.
             </p>
             <div className="flex gap-10 mt-8">
               {[
-                { value: "$0.10", label: "Elsa x402 (mainnet)" },
+                { value: "$0.50", label: "Elsa x402 (mainnet)" },
                 { value: "inhouse", label: "LLM backend" },
                 { value: "Excalidraw", label: "structured output" },
               ].map((stat) => (
@@ -1316,11 +1316,11 @@ function DiagramWeaverCard() {
                 ? progress || "Working..."
                 : !isConnected
                   ? "Connect Wallet"
-                  : "Weave diagram — $0.10 via Elsa x402"}
+                  : "Weave diagram — $0.50 via Elsa x402"}
             </button>
 
             <p className="text-xs text-muted text-center">
-              $0.10 USDC settled on Base mainnet. No other fees.
+              $0.50 USDC settled on Base mainnet. No other fees.
             </p>
           </div>
         </div>
@@ -1425,7 +1425,7 @@ function DiagramWeaverEndpointDocs() {
   const jsSnippet = `// 1. Discover Diagram Weaver + its x402 price
 const { agents } = await (await fetch("${catalog}")).json();
 const weaver = agents.find(a => a.slug === "diagram-weaver");
-// weaver.price_usdc === 0.10, weaver.resource is the endpoint
+// weaver.price_usdc === 0.50, weaver.resource is the endpoint
 
 // 2. Probe for the 402 envelope
 const probe = await fetch(weaver.resource, {
