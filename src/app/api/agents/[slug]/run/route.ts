@@ -50,6 +50,62 @@ async function hashX402(header: string): Promise<string> {
   return fingerprint(header);
 }
 
+// Poll the jobs table for a sibling row that owns this fingerprint. Returns
+// a NextResponse with the completed output if found, null if the sibling
+// failed, and null after a generous timeout if still 'processing'. Called
+// both from the "authorization is used" replay branch AND from the claim
+// conflict branch.
+async function waitForSiblingJob(
+  paymentFp: string
+): Promise<NextResponse | null> {
+  const pollStart = Date.now();
+  const pollWindowMs = 240_000;
+  while (Date.now() - pollStart < pollWindowMs) {
+    const rows = await sql`
+      SELECT id, output_payload, elsa_tx_hash, llm_model, tokens_used, status
+      FROM jobs
+      WHERE payment_fingerprint = ${paymentFp}
+      LIMIT 1
+    `;
+    if (rows.length > 0) {
+      const row = rows[0] as {
+        id: string;
+        output_payload: unknown;
+        elsa_tx_hash: string | null;
+        llm_model: string | null;
+        tokens_used: number | null;
+        status: string;
+      };
+      if (row.status === "completed") {
+        console.info(
+          `[agent-run] replay served from DB (job ${row.id.slice(0, 8)}…)`
+        );
+        return NextResponse.json({
+          output: row.output_payload,
+          job_id: row.id,
+          tx_hash: row.elsa_tx_hash,
+          model: row.llm_model,
+          tokens: row.tokens_used,
+          cached: true,
+        });
+      }
+      if (row.status === "failed") {
+        return NextResponse.json(
+          {
+            error: "sibling_job_failed",
+            reason:
+              "A sibling request for this payment failed. Refresh and try again with a fresh signature.",
+          },
+          { status: 503 }
+        );
+      }
+      // status === 'processing' → keep polling
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/agents/[slug]/run
 // ---------------------------------------------------------------------------
@@ -203,51 +259,15 @@ async function runOnce(request: NextRequest, slug: string) {
 
   const verified = await verifyPayment(paymentHeader, requirements);
   if (!verified.ok) {
-    // "authorization is used or canceled" means the on-chain nonce was
-    // already consumed by a sibling request — usually our own earlier
-    // attempt that's still mid-LLM. Poll the DB for its completed job and
-    // return that result instead of bubbling up a revert to the user.
+    // "authorization is used or canceled" → the on-chain nonce was consumed
+    // by a sibling request (either a duplicate in flight or a prior run
+    // that crashed post-settlement). Poll by fingerprint for ANY row —
+    // completed returns cached output; processing keeps polling; failed
+    // exits fast so we don't sit here for 4 minutes waiting on a dead job.
     const reasonLower = (verified.reason ?? "").toLowerCase();
     if (reasonLower.includes("authorization is used or canceled")) {
-      // Poll for up to 4 minutes — matches the ceiling the sibling request
-      // can run under maxDuration=300s. Complex scenes (10+ node Excalidraw,
-      // long prose descriptions) can legitimately take 60-120s on the
-      // in-house model; cutting the poll short makes us surface a spurious
-      // timeout while the sibling is still finishing.
-      const pollStart = Date.now();
-      const pollWindowMs = 240_000;
-      while (Date.now() - pollStart < pollWindowMs) {
-        await new Promise((r) => setTimeout(r, 2_000));
-        const rows = await sql`
-          SELECT id, output_payload, elsa_tx_hash, llm_model, tokens_used, status
-          FROM jobs
-          WHERE payment_fingerprint = ${paymentFp} AND status = 'completed'
-          LIMIT 1
-        `;
-        if (rows.length > 0) {
-          const cached = rows[0] as {
-            id: string;
-            output_payload: unknown;
-            elsa_tx_hash: string | null;
-            llm_model: string | null;
-            tokens_used: number | null;
-          };
-          console.info(
-            `[agent-run] replay recovered via DB poll (job ${cached.id.slice(0, 8)}…)`
-          );
-          return NextResponse.json({
-            output: cached.output_payload,
-            job_id: cached.id,
-            tx_hash: cached.elsa_tx_hash,
-            model: cached.llm_model,
-            tokens: cached.tokens_used,
-            cached: true,
-          });
-        }
-      }
-      // Still no completed job after 45s — the sibling request probably
-      // crashed post-settlement. Surface a dedicated error so the client
-      // knows USDC may have moved.
+      const cached = await waitForSiblingJob(paymentFp);
+      if (cached) return cached;
       return NextResponse.json(
         {
           error: "replay_recovery_timeout",
@@ -332,34 +352,101 @@ async function runOnce(request: NextRequest, slug: string) {
     }
   }
 
-  // Step 7 — LLM call. One silent retry on transient errors (OpenRouter
-  // occasionally returns 5xx / 429 during traffic spikes) before we give up.
+  // Step 6.5 — Claim a pending job row keyed on payment_fingerprint BEFORE
+  // we call the LLM. This closes the window where an in-flight sibling has
+  // consumed the on-chain nonce but hasn't yet inserted a job; retries can
+  // now see 'processing' and wait, rather than staring at an empty DB.
+  const priceCents = Math.round(priceUsdc * 100);
+  const creatorPayoutCents = Math.round(priceCents * 0.75);
+  const reapFeeCents = priceCents - creatorPayoutCents;
+
+  const claimRows = await sql`
+    INSERT INTO jobs (
+      agent_id, input_payload, status, price_cents, elsa_tx_hash,
+      creator_payout_cents, reap_fee_cents, payment_fingerprint,
+      created_at, updated_at
+    )
+    VALUES (
+      ${agent.id},
+      ${JSON.stringify({ input })}::jsonb,
+      'processing',
+      ${priceCents},
+      ${verified.tx_hash ?? null},
+      ${creatorPayoutCents},
+      ${reapFeeCents},
+      ${paymentFp},
+      now(),
+      now()
+    )
+    ON CONFLICT (payment_fingerprint) DO NOTHING
+    RETURNING id
+  `;
+
+  if (claimRows.length === 0) {
+    // Another instance already claimed this fingerprint — either finished
+    // already or still running. Wait for its outcome.
+    const cached = await waitForSiblingJob(paymentFp);
+    if (cached) return cached;
+    return NextResponse.json(
+      {
+        error: "replay_recovery_timeout",
+        reason:
+          "A sibling request is handling this payment but didn't complete in time.",
+      },
+      { status: 504 }
+    );
+  }
+
+  const jobId = (claimRows[0] as { id: string }).id;
+
+  // Step 7 — LLM call with overall timeout budget (170s). When INHOUSE_LLM_URL
+  // is unreachable and OpenRouter is slow, we used to hang until Vercel's
+  // 300s hard kill — leaving a 'processing' row that never resolves. Bound
+  // the whole LLM pipeline so we always persist a terminal state.
   let llmResult;
   let llmErr: unknown = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      llmResult = await callLLM(
-        agent.system_prompt,
-        input,
-        agent.model as ModelKey
-      );
-      llmErr = null;
-      break;
-    } catch (err) {
-      llmErr = err;
-      // Only retry if it looks like a transient OpenRouter error.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!/rate|429|5\d\d|timeout|ECONN|network/i.test(msg)) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
+  const llmBudgetMs = 170_000;
+  try {
+    llmResult = await Promise.race([
+      (async () => {
+        let last: unknown;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            return await callLLM(
+              agent.system_prompt,
+              input,
+              agent.model as ModelKey
+            );
+          } catch (err) {
+            last = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!/rate|429|5\d\d|timeout|ECONN|network/i.test(msg)) break;
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+        throw last;
+      })(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`LLM budget exceeded after ${llmBudgetMs}ms`)),
+          llmBudgetMs
+        )
+      ),
+    ]);
+  } catch (err) {
+    llmErr = err;
   }
 
   if (!llmResult) {
     const rawMsg =
       llmErr instanceof Error ? llmErr.message : String(llmErr ?? "unknown");
     console.error("[agent-run] LLM call failed:", rawMsg);
-    // Return a trimmed, safe reason string. Truncate hard so we never leak
-    // full stack traces or auth headers back to the client.
+    // Mark the claim row as failed so subsequent replays exit fast instead
+    // of waiting the full poll window.
+    await sql`
+      UPDATE jobs SET status='failed', updated_at=now()
+      WHERE id = ${jobId}
+    `;
     const reason = rawMsg.slice(0, 240);
     return NextResponse.json(
       {
@@ -367,45 +454,24 @@ async function runOnce(request: NextRequest, slug: string) {
         reason,
         model: agent.model,
         hint:
-          "The LLM provider rejected the call. This usually clears on retry. If it keeps failing, the agent's model setting may be invalid — update it in Settings → Model.",
+          "The LLM provider timed out or rejected the call. Retry in a moment.",
       },
       { status: 503 }
     );
   }
 
-  // Step 8 — Record job
-  const priceCents = Math.round(priceUsdc * 100);
-  const creatorPayoutCents = Math.round(priceCents * 0.75);
-  const reapFeeCents = priceCents - creatorPayoutCents;
-
-  const jobRows = await sql`
-    INSERT INTO jobs (
-      agent_id, input_payload, output_payload, status,
-      price_cents, elsa_tx_hash, tokens_used, llm_cost_usdc,
-      llm_model, creator_payout_cents, reap_fee_cents,
-      payment_fingerprint,
-      created_at, updated_at
-    )
-    VALUES (
-      ${agent.id},
-      ${JSON.stringify({ input })}::jsonb,
-      ${JSON.stringify(llmResult.content)}::jsonb,
-      'completed',
-      ${priceCents},
-      ${verified.tx_hash ?? null},
-      ${llmResult.tokens},
-      ${llmResult.cost_usdc},
-      ${llmResult.model},
-      ${creatorPayoutCents},
-      ${reapFeeCents},
-      ${paymentFp},
-      now(),
-      now()
-    )
-    RETURNING id
+  // Step 8 — Upgrade the claim row to completed with the LLM output.
+  await sql`
+    UPDATE jobs
+    SET
+      output_payload = ${JSON.stringify(llmResult.content)}::jsonb,
+      status = 'completed',
+      tokens_used = ${llmResult.tokens},
+      llm_cost_usdc = ${llmResult.cost_usdc},
+      llm_model = ${llmResult.model},
+      updated_at = now()
+    WHERE id = ${jobId}
   `;
-
-  const jobId = (jobRows[0] as { id: string }).id;
 
   // Step 9 — Update balance (UPSERT)
   const creatorPayoutUsdc = priceUsdc * 0.75;
