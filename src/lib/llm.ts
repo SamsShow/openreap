@@ -285,6 +285,13 @@ async function callInhouseLLM(
         // on `json_object` without a schema. The system prompt already
         // demands JSON-only and parseModelJson tolerates fences/truncation.
         temperature: 0.1,
+        // LM Studio defaults n_predict / max_tokens to ~4096 and was
+        // clipping generations mid-scene — Gemma burns ~1700 tokens on
+        // reasoning before emitting JSON, leaving ~2300 for the output.
+        // Set explicitly well above the 6-7k we've observed on large
+        // multi-flow diagrams. The model will still stop naturally on
+        // its own finish_reason when done.
+        max_tokens: 16000,
       }),
       signal: controller.signal,
     });
