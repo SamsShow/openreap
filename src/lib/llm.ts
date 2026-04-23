@@ -285,6 +285,11 @@ async function callInhouseLLM(
         // on `json_object` without a schema. The system prompt already
         // demands JSON-only and parseModelJson tolerates fences/truncation.
         temperature: 0.1,
+        // Gemma E4B was producing 7k+ completion tokens per request over
+        // ngrok, pushing total round-trip past our LLM budget even for
+        // simple 15-node diagrams. 3500 is comfortably above what any
+        // current in-house agent needs (diagram JSON, code-roast review).
+        max_tokens: 3500,
       }),
       signal: controller.signal,
     });
