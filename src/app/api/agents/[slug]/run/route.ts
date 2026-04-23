@@ -45,6 +45,11 @@ async function fingerprint(header: string): Promise<string> {
     .join("");
 }
 
+// Shorter alias used inside runOnce for clarity.
+async function hashX402(header: string): Promise<string> {
+  return fingerprint(header);
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/agents/[slug]/run
 // ---------------------------------------------------------------------------
@@ -122,6 +127,39 @@ async function runOnce(request: NextRequest, slug: string) {
       getPaymentDetails(agent.name, agent.slug, priceUsdc),
       { status: 402 }
     );
+  }
+
+  // Step 1.5 — DB-backed idempotency. If we've already completed a job for
+  // this exact signed authorization (hash collision), return that response
+  // instead of re-verifying (which would hit USDC's "used or canceled" for
+  // the same nonce). Covers cross-instance retries where the in-memory
+  // dedupe map didn't match.
+  const paymentFp = await hashX402(paymentHeader);
+  const cachedJobRows = await sql`
+    SELECT id, output_payload, elsa_tx_hash, llm_model, tokens_used, status
+    FROM jobs
+    WHERE payment_fingerprint = ${paymentFp} AND status = 'completed'
+    LIMIT 1
+  `;
+  if (cachedJobRows.length > 0) {
+    const cached = cachedJobRows[0] as {
+      id: string;
+      output_payload: unknown;
+      elsa_tx_hash: string | null;
+      llm_model: string | null;
+      tokens_used: number | null;
+    };
+    console.info(
+      `[agent-run] cache hit for fingerprint (job ${cached.id.slice(0, 8)}…)`
+    );
+    return NextResponse.json({
+      output: cached.output_payload,
+      job_id: cached.id,
+      tx_hash: cached.elsa_tx_hash,
+      model: cached.llm_model,
+      tokens: cached.tokens_used,
+      cached: true,
+    });
   }
 
   // Step 2 — Decode the payload, pick the matching requirements, verify.
@@ -290,6 +328,7 @@ async function runOnce(request: NextRequest, slug: string) {
       agent_id, input_payload, output_payload, status,
       price_cents, elsa_tx_hash, tokens_used, llm_cost_usdc,
       llm_model, creator_payout_cents, reap_fee_cents,
+      payment_fingerprint,
       created_at, updated_at
     )
     VALUES (
@@ -304,6 +343,7 @@ async function runOnce(request: NextRequest, slug: string) {
       ${llmResult.model},
       ${creatorPayoutCents},
       ${reapFeeCents},
+      ${paymentFp},
       now(),
       now()
     )

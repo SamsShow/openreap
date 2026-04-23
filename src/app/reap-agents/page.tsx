@@ -743,6 +743,10 @@ function CodeRoasterCard() {
           });
           body = (await res.json().catch(() => null)) as RoastResponse | null;
           lastNetErr = null;
+          if (res.status >= 500 && attempt < 2) {
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
           break;
         } catch (netErr) {
           lastNetErr = netErr;
@@ -1259,6 +1263,12 @@ function DiagramWeaverCard() {
           });
           body = (await res.json().catch(() => null)) as DiagramResponse | null;
           lastNetErr = null;
+          // Retry on 5xx (Vercel edge 502/504 mid-flight). Server-side DB
+          // dedupe returns the cached response immediately on the retry.
+          if (res.status >= 500 && attempt < 2) {
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
           break;
         } catch (netErr) {
           lastNetErr = netErr;
