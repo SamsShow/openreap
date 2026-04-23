@@ -225,8 +225,8 @@ const INHOUSE_DEFAULT_MODEL_ID = "llama-3.2-3b-instruct";
 // 60s default suits reasoning models (deepseek-r1 needs 30-50s on typical
 // prompts). Fast non-reasoning models like llama-3.2 finish in <10s so the
 // higher ceiling is harmless. Override with INHOUSE_LLM_TIMEOUT_MS.
-const INHOUSE_DEFAULT_TIMEOUT_MS = 60_000;
-const INHOUSE_MAX_ATTEMPTS = 3;
+const INHOUSE_DEFAULT_TIMEOUT_MS = 260_000;
+const INHOUSE_MAX_ATTEMPTS = 1;
 const INHOUSE_BASE_BACKOFF_MS = 300;
 
 function inhouseTimeoutMs(): number {
@@ -285,11 +285,6 @@ async function callInhouseLLM(
         // on `json_object` without a schema. The system prompt already
         // demands JSON-only and parseModelJson tolerates fences/truncation.
         temperature: 0.1,
-        // Gemma E4B was producing 7k+ completion tokens per request over
-        // ngrok, pushing total round-trip past our LLM budget even for
-        // simple 15-node diagrams. 3500 is comfortably above what any
-        // current in-house agent needs (diagram JSON, code-roast review).
-        max_tokens: 3500,
       }),
       signal: controller.signal,
     });
