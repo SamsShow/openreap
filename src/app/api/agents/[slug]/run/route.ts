@@ -203,6 +203,55 @@ async function runOnce(request: NextRequest, slug: string) {
 
   const verified = await verifyPayment(paymentHeader, requirements);
   if (!verified.ok) {
+    // "authorization is used or canceled" means the on-chain nonce was
+    // already consumed by a sibling request — usually our own earlier
+    // attempt that's still mid-LLM. Poll the DB for its completed job and
+    // return that result instead of bubbling up a revert to the user.
+    const reasonLower = (verified.reason ?? "").toLowerCase();
+    if (reasonLower.includes("authorization is used or canceled")) {
+      const pollStart = Date.now();
+      while (Date.now() - pollStart < 45_000) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const rows = await sql`
+          SELECT id, output_payload, elsa_tx_hash, llm_model, tokens_used, status
+          FROM jobs
+          WHERE payment_fingerprint = ${paymentFp} AND status = 'completed'
+          LIMIT 1
+        `;
+        if (rows.length > 0) {
+          const cached = rows[0] as {
+            id: string;
+            output_payload: unknown;
+            elsa_tx_hash: string | null;
+            llm_model: string | null;
+            tokens_used: number | null;
+          };
+          console.info(
+            `[agent-run] replay recovered via DB poll (job ${cached.id.slice(0, 8)}…)`
+          );
+          return NextResponse.json({
+            output: cached.output_payload,
+            job_id: cached.id,
+            tx_hash: cached.elsa_tx_hash,
+            model: cached.llm_model,
+            tokens: cached.tokens_used,
+            cached: true,
+          });
+        }
+      }
+      // Still no completed job after 45s — the sibling request probably
+      // crashed post-settlement. Surface a dedicated error so the client
+      // knows USDC may have moved.
+      return NextResponse.json(
+        {
+          error: "replay_recovery_timeout",
+          reason:
+            "A sibling request consumed this payment on-chain but didn't complete in time. Check BaseScan for your USDC; contact support if the charge stuck.",
+        },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Payment verification failed", reason: verified.reason },
       { status: 402 }

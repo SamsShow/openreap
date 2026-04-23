@@ -1180,10 +1180,81 @@ function DiagramWeaverCard() {
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState<DiagramResponse | null>(null);
   const [error, setError] = useState<unknown>(null);
+  // Cache the last signed x-payment so "Try again" can resubmit the SAME
+  // auth instead of re-signing (which would burn another $0.50). The
+  // server-side dedupe returns the cached result.
+  const [lastSigned, setLastSigned] = useState<{
+    header: string;
+    input: string;
+  } | null>(null);
 
   const { address, isConnected } = useAccount();
   const wagmiConfig = useConfig();
   const { openConnectModal } = useConnectModal();
+
+  async function retryLastSubmit() {
+    if (!lastSigned) {
+      await handleWeave();
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    await submitSigned(lastSigned.header, lastSigned.input);
+  }
+
+  async function submitSigned(header: string, input: string) {
+    const endpoint = "/api/agents/diagram-weaver/run";
+    setProgress("Resubmitting your signed payment...");
+    try {
+      let res: Response | null = null;
+      let body: DiagramResponse | null = null;
+      let lastNetErr: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            setProgress(
+              `Reconnecting (attempt ${attempt + 1}/3) — your signed payment is still valid...`
+            );
+          }
+          res = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-payment": header,
+            },
+            body: JSON.stringify({ input }),
+          });
+          body = (await res.json().catch(() => null)) as DiagramResponse | null;
+          lastNetErr = null;
+          if (res.status >= 500 && attempt < 2) {
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
+          break;
+        } catch (netErr) {
+          lastNetErr = netErr;
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      if (lastNetErr || !res) {
+        throw new X402ClientError(
+          "elsa_unreachable",
+          "Lost connection to the agent",
+          "Your signed payment is still valid — try again or refresh the page.",
+          { details: lastNetErr instanceof Error ? lastNetErr.message : String(lastNetErr) }
+        );
+      }
+      if (!res.ok || !body) {
+        throw classifyElsaError(res.status, body);
+      }
+      setResult(body);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setProgress("");
+      setLoading(false);
+    }
+  }
 
   async function handleWeave() {
     if (!isConnected || !address) {
@@ -1201,6 +1272,7 @@ function DiagramWeaverCard() {
     setError(null);
     setResult(null);
     setLoading(true);
+    setLastSigned(null);
     setProgress("Fetching x402 requirements...");
 
     const endpoint = "/api/agents/diagram-weaver/run";
@@ -1235,6 +1307,9 @@ function DiagramWeaverCard() {
       } catch (err) {
         throw classifySignError(err);
       }
+      // Cache so "Try again" resubmits the same authorization instead of
+      // re-signing (which would charge the user a second time).
+      setLastSigned({ header: signed.header, input: description });
 
       setProgress("Settling via Elsa facilitator + weaving...");
       // The LLM call can take 30-60s on the in-house model. If the edge
@@ -1419,7 +1494,7 @@ function DiagramWeaverCard() {
             {error ? (
               <ErrorCard
                 error={error}
-                onRetry={handleWeave}
+                onRetry={retryLastSubmit}
                 fundingAddress={address as `0x${string}` | undefined}
               />
             ) : null}
