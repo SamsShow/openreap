@@ -86,11 +86,34 @@ export function classifyElsaError(
     );
   }
 
+  // Surface the on-chain revert reason from the facilitator when present.
+  // "FiatTokenV2: authorization is used or canceled" is the most common —
+  // it means this specific signed nonce was already consumed on-chain, so
+  // the facilitator's retry hit a replay of a stale payload.
+  const reason =
+    typeof asObj?.reason === "string" ? (asObj.reason as string) : null;
+  if (reason && /authorization is used or canceled/i.test(reason)) {
+    return new X402ClientError(
+      "facilitator_failed",
+      "Authorization already used",
+      "This signed payment was already consumed on Base. The first attempt most likely settled on-chain — the USDC has already been sent. Refresh the page and try again with a fresh wallet session.",
+      {
+        hint:
+          "If you were billed but saw no result, check BaseScan for your wallet's recent USDC transfers. The fix on our side is a one-shot retry policy; for now, a page refresh forces a clean signature.",
+        details: body,
+      }
+    );
+  }
+
   if (status === 402) {
     return new X402ClientError(
       "elsa_rejected",
       "Elsa refused the payment",
-      raw ? `Elsa returned: ${raw}.` : "Elsa returned HTTP 402 after settlement.",
+      reason
+        ? `Elsa returned: ${raw ?? "402"} — ${reason}.`
+        : raw
+          ? `Elsa returned: ${raw}.`
+          : "Elsa returned HTTP 402 after settlement.",
       { details: body }
     );
   }
