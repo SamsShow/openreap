@@ -10,6 +10,36 @@ import type { ModelKey } from "@/lib/llm";
 import type { ParsedSkill } from "@/lib/skill-parser";
 
 // ---------------------------------------------------------------------------
+// Per-instance in-flight deduplication keyed on the x-payment header.
+//
+// We've seen duplicate POSTs on Vercel (but not localhost) where two
+// concurrent requests fire with the same signed authorization. The first
+// reaches the facilitator and settles on-chain; the second is still
+// mid-flight, calls the facilitator with the same auth, and USDC reverts
+// with "FiatTokenV2: authorization is used or canceled" — leaving the user
+// billed but with no response shown.
+//
+// Keeping the Promise in a Map lets the second request await the first's
+// result instead of re-entering the flow. Vercel Fluid Compute reuses
+// function instances for concurrent invocations, so this covers the hot
+// path. Cold-instance collisions would still fall through — if that turns
+// out to be a real problem we move the fingerprint check into Postgres.
+// ---------------------------------------------------------------------------
+type InFlight = Promise<{ status: number; body: unknown }>;
+const inFlight = new Map<string, InFlight>();
+const IN_FLIGHT_TTL_MS = 5 * 60_000;
+
+async function fingerprint(header: string): Promise<string> {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(header)
+  );
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/agents/[slug]/run
 // ---------------------------------------------------------------------------
 
@@ -18,6 +48,41 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
+
+  // Early fingerprint check — if we're already processing this exact signed
+  // authorization on this instance, await that work and return its result.
+  const rawPayment = request.headers.get("x-payment");
+  if (rawPayment) {
+    const fp = await fingerprint(rawPayment);
+    const existing = inFlight.get(fp);
+    if (existing) {
+      const { status, body } = await existing;
+      return NextResponse.json(body as Record<string, unknown>, { status });
+    }
+    let resolve: (v: { status: number; body: unknown }) => void = () => {};
+    let reject: (err: unknown) => void = () => {};
+    const pending: InFlight = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    inFlight.set(fp, pending);
+    setTimeout(() => inFlight.delete(fp), IN_FLIGHT_TTL_MS);
+
+    try {
+      const res = await runOnce(request, slug);
+      const body = await res.clone().json();
+      resolve({ status: res.status, body });
+      return res;
+    } catch (err) {
+      reject(err);
+      throw err;
+    }
+  }
+
+  return runOnce(request, slug);
+}
+
+async function runOnce(request: NextRequest, slug: string) {
 
   // Step 3 — Load agent
   const agentRows = await sql`
