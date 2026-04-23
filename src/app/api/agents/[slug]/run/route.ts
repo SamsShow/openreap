@@ -378,7 +378,7 @@ async function runOnce(request: NextRequest, slug: string) {
       now(),
       now()
     )
-    ON CONFLICT (payment_fingerprint) DO NOTHING
+    ON CONFLICT (payment_fingerprint) WHERE payment_fingerprint IS NOT NULL DO NOTHING
     RETURNING id
   `;
 
