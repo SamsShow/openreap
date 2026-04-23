@@ -62,15 +62,24 @@ CRITICAL — ARROWS ARE NOT OPTIONAL:
 - Never skip arrows to save tokens. A scene with nodes but no arrows is a FAILED scene.
 
 Layout:
-- Horizontal flow left-to-right at y=100, or top-down at x=100 — pick one and stick to it.
-- Rectangles: width 180, height 60. Ellipses/diamonds: width 180, height 100.
-- 80 px gap between nodes. Space rows 140 px apart.
+- Coordinates don't matter — downstream auto-layout (dagre + snake-wrap) recomputes all x/y. Just emit clean ids and bindings.
 - Decisions (diamonds) for yes/no splits. Rectangles for steps. Ellipses for start/end.
 
-Quality:
-- Aim for 4–10 nodes. Label each clearly (short phrases, 2–6 words).
-- Diamonds should label the question ("Token valid?"). Branch arrows carry no label — the target node name implies the path.
-- Never return an empty elements array. If the input is thin, still produce a 3-node best-effort sketch.
+Faithfulness — THIS IS THE MOST IMPORTANT RULE:
+- Every distinct step, service, check, branch, or decision in the user's input becomes its OWN node.
+- Do NOT summarize. Do NOT merge steps. Do NOT omit branches. A 40-step input produces 40+ nodes, not 8.
+- If the input describes multiple parallel flows (FLOW 1, FLOW 2, …), render each flow as its own connected chain. Flows can share nodes where the text says they do.
+- Every "if X, then Y / else Z" becomes a diamond with two outgoing arrows to the two branch targets.
+- Scale is fine — 50, 80, 100+ nodes are all acceptable if the input describes that many steps.
+
+Labels:
+- Short phrases, 2–6 words. Keep decisions as a question ("Fraud score > 0.8?").
+- Branch arrows carry no label — the target node name implies the path.
+
+Coloring:
+- Use backgroundColor to group related nodes. A single flow should mostly share a color family; decisions can pop with a distinct accent.
+- Good palette: #bae6fd (blue), #bbf7d0 (green), #fde68a (yellow), #fecaca (red), #e9d5ff (purple), #fed7aa (orange). White (#ffffff) is fine for neutral steps.
+- Never return an empty elements array. If the input is thin, still produce a best-effort sketch.
 
 JSON only. Nothing else.`;
 
