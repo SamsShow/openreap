@@ -92,14 +92,15 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
     }
   }
 
-  // Size each node to fit its label. 8.5 px/char is a conservative monospace
-  // estimate for Excalidraw's default Virgil font at 18px.
+  // Size each node to fit its label. Excalidraw's Virgil at 18px needs
+  // ~12 px/char and ~30 px of horizontal padding to avoid clipping the
+  // first/last characters of long labels. No upper cap — let wide labels
+  // get wide rectangles; dagre will space things out accordingly.
   function sizeFor(node: ParsedNode): { width: number; height: number } {
     const lines = node.text.split(/\r?\n/);
     const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
-    const rawWidth = Math.max(160, longest * 10 + 40);
-    const width = Math.min(360, rawWidth);
-    const height = Math.max(70, lines.length * 26 + 30);
+    const width = Math.max(180, longest * 12 + 60);
+    const height = Math.max(72, lines.length * 28 + 32);
     return { width, height };
   }
 
@@ -120,7 +121,20 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
 
   // Only keep edges that reference real nodes — silent drop otherwise.
   const nodeIds = new Set(nodes.map((n) => n.id));
-  const validEdges = edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to));
+  let validEdges = edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to));
+
+  // Fallback: small LLMs routinely run out of tokens before emitting arrows
+  // for long scenes, leaving N nodes with 0 edges. Without edges dagre
+  // stacks every node in its own rank. Auto-chain them in emission order —
+  // the user's prompt was a sequential flow description anyway, so a linear
+  // A → B → C chain is the right default.
+  if (validEdges.length === 0 && nodes.length >= 2) {
+    validEdges = [];
+    for (let i = 0; i < nodes.length - 1; i += 1) {
+      validEdges.push({ from: nodes[i].id, to: nodes[i + 1].id });
+    }
+  }
+
   for (const e of validEdges) g.setEdge(e.from, e.to);
 
   dagre.layout(g);
