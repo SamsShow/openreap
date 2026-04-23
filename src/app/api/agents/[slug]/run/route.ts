@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 
-// Large multi-flow diagrams on the in-house Gemma can produce 6k+
-// tokens and take 5-10 minutes to stream over ngrok. Vercel Fluid
-// Compute caps maxDuration at 800s on Pro (clamped to 300s on Hobby).
-// Go to the ceiling — we'd rather occupy the function than return
-// half-baked failures.
-export const maxDuration = 800;
+// Vercel caps maxDuration at 300s on Hobby; 800s only on Pro. Stay at
+// the Hobby-safe ceiling so deploys don't fail on plan validation.
+// Bump to 800 when this project moves to Pro Fluid Compute.
+export const maxDuration = 300;
 import {
   getPaymentDetails,
   requirementsForNetwork,
@@ -434,11 +432,11 @@ async function runOnce(request: NextRequest, slug: string) {
     jobId = (claimRows[0] as { id: string }).id;
   }
 
-  // Step 7 — LLM call with overall timeout budget (770s). Leaves ~30s
-  // under the 800s maxDuration for DB writes + response serialization.
+  // Step 7 — LLM call with overall timeout budget (270s). Leaves ~30s
+  // under the 300s maxDuration for DB writes + response serialization.
   let llmResult;
   let llmErr: unknown = null;
-  const llmBudgetMs = 770_000;
+  const llmBudgetMs = 270_000;
   try {
     llmResult = await Promise.race([
       (async () => {
