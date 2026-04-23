@@ -399,13 +399,13 @@ async function runOnce(request: NextRequest, slug: string) {
 
   const jobId = (claimRows[0] as { id: string }).id;
 
-  // Step 7 — LLM call with overall timeout budget (170s). When INHOUSE_LLM_URL
-  // is unreachable and OpenRouter is slow, we used to hang until Vercel's
-  // 300s hard kill — leaving a 'processing' row that never resolves. Bound
-  // the whole LLM pipeline so we always persist a terminal state.
+  // Step 7 — LLM call with overall timeout budget (270s). Leaves ~30s under
+  // the 300s maxDuration for DB writes + response. In-house Gemma over
+  // ngrok regularly produces 5k+ token diagrams and needs the full window;
+  // budget-exceeded marks the row 'failed' so sibling retries exit fast.
   let llmResult;
   let llmErr: unknown = null;
-  const llmBudgetMs = 170_000;
+  const llmBudgetMs = 270_000;
   try {
     llmResult = await Promise.race([
       (async () => {
