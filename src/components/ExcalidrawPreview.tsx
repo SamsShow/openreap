@@ -228,13 +228,21 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
     if (!a || !b) continue;
     const aEdge = edgePoint(a, b.x, b.y);
     const bEdge = edgePoint(b, a.x, a.y);
+    const dx = bEdge.x - aEdge.x;
+    const dy = bEdge.y - aEdge.y;
+    // Skip degenerate arrows — zero-length arrows or ones with NaN
+    // coords break Excalidraw's scene renderer (sad-face icon).
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
     skeleton.push({
       type: "arrow",
       x: aEdge.x,
       y: aEdge.y,
+      width: dx,
+      height: dy,
       points: [
         [0, 0],
-        [bEdge.x - aEdge.x, bEdge.y - aEdge.y],
+        [dx, dy],
       ],
     });
   }
@@ -343,13 +351,19 @@ function snakeLayout(
     };
     const aEdge = edgePoint(a, b.x, b.y);
     const bEdge = edgePoint(b, a.x, a.y);
+    const dx = bEdge.x - aEdge.x;
+    const dy = bEdge.y - aEdge.y;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
     skeleton.push({
       type: "arrow",
       x: aEdge.x,
       y: aEdge.y,
+      width: dx,
+      height: dy,
       points: [
         [0, 0],
-        [bEdge.x - aEdge.x, bEdge.y - aEdge.y],
+        [dx, dy],
       ],
     });
   }
