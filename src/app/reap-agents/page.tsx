@@ -1170,6 +1170,7 @@ type DiagramResponse = {
   tx_hash?: string;
   model?: string;
   tokens?: number;
+  thinking?: string;
   error?: string;
   reason?: string;
 };
@@ -1457,6 +1458,16 @@ function DiagramWeaverCard() {
             ) : null}
             {result && (
               <div className="flex flex-col gap-4">
+                {result.thinking && (
+                  <details className="rounded-xl bg-bg border border-border p-4" open>
+                    <summary className="text-xs text-muted uppercase tracking-wider cursor-pointer">
+                      Model thinking
+                    </summary>
+                    <pre className="whitespace-pre-wrap break-words font-mono text-[12px] text-cream/90 mt-3 max-h-[320px] overflow-auto">
+                      {result.thinking}
+                    </pre>
+                  </details>
+                )}
                 {scene?.error === "output_invalid" && (
                   <div className="rounded-xl bg-terracotta/10 border border-terracotta/30 p-4">
                     <p className="text-xs uppercase tracking-wider text-terracotta">

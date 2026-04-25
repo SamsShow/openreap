@@ -35,6 +35,8 @@ interface ParsedEdge {
   to: string;
 }
 
+const LABEL_FONT_SIZE = 16;
+
 /**
  * LLM output is unreliable about x/y coordinates. We throw the model's
  * layout away entirely and recompute it from the graph structure using
@@ -126,15 +128,16 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
   }
   standaloneText.push(...unattachedText);
 
-  // Size each node to fit its label. Excalidraw's Virgil at 18px needs
-  // ~12 px/char and ~30 px of horizontal padding to avoid clipping the
-  // first/last characters of long labels. No upper cap — let wide labels
-  // get wide rectangles; dagre will space things out accordingly.
+  // Size each node so the bound text label fits with margin to spare.
+  // At fontSize 16 (LABEL_FONT_SIZE), Excalifont averages ~10 px/char and
+  // the bound-text helper reserves ~15 px of horizontal padding inside
+  // the container. We use 11 px/char + 80 px of slack so long labels
+  // ("Triage Nurse assesses vitals") never clip at the edges.
   function sizeFor(node: ParsedNode): { width: number; height: number } {
     const lines = node.text.split(/\r?\n/);
     const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
-    const width = Math.max(180, longest * 12 + 60);
-    const height = Math.max(72, lines.length * 28 + 32);
+    const width = Math.max(200, longest * 11 + 80);
+    const height = Math.max(72, lines.length * 26 + 36);
     return { width, height };
   }
 
@@ -175,8 +178,16 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
   // long enough that LR dagre would produce an unreadable ribbon, bypass
   // dagre and snake-wrap rows instead. Arrows between row ends turn back,
   // giving the preview a 2D shape that fills the canvas.
+  // Snake-wrap is only valid for genuinely linear flows. A graph with any
+  // diamond means the model intended branches — even if it emitted only
+  // one arrow per diamond (a bug we'd rather expose than hide). Letting
+  // dagre lay it out LR makes the missing branches visually obvious so
+  // the prompt/model can be debugged, instead of pretending the chart
+  // is a tidy snake.
   const CHAIN_WRAP_THRESHOLD = 6;
+  const hasDiamond = nodes.some((n) => n.type === "diamond");
   if (
+    !hasDiamond &&
     nodes.length > CHAIN_WRAP_THRESHOLD &&
     isLinearChain(nodes, validEdges)
   ) {
@@ -206,7 +217,7 @@ function buildLayoutedSkeleton(rawElements: unknown[]): Unknown[] {
       strokeColor: n.strokeColor,
       backgroundColor: n.backgroundColor,
     };
-    if (n.text) el.label = { text: n.text, fontSize: 20 };
+    if (n.text) el.label = { text: n.text, fontSize: LABEL_FONT_SIZE };
     skeleton.push(el);
   }
 
@@ -330,7 +341,7 @@ function snakeLayout(
       strokeColor: n.strokeColor,
       backgroundColor: n.backgroundColor,
     };
-    if (n.text) el.label = { text: n.text, fontSize: 20 };
+    if (n.text) el.label = { text: n.text, fontSize: LABEL_FONT_SIZE };
     skeleton.push(el);
   }
 

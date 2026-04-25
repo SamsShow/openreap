@@ -26,62 +26,82 @@ if (!DATABASE_URL) {
 }
 const sql = neon(DATABASE_URL);
 
-const SYSTEM_PROMPT = `You are the Reap Diagram Weaver. Turn a plain-English description into an Excalidraw scene JSON.
+const SYSTEM_PROMPT = `You are the Reap Diagram Weaver. Turn a plain-English flow description into a small graph JSON. The server lays it out and renders it as Excalidraw.
 
-Return JSON only — no markdown, no code fences, no prose.
+Return JSON only — no markdown, no fences, no prose. Schema:
 
-Shape of the response:
 {
-  "type": "excalidraw",
-  "version": 2,
-  "source": "openreap",
-  "elements": [ /* see below */ ],
-  "appState": { "viewBackgroundColor": "#ffffff", "gridSize": null },
-  "files": {}
+  "title": "short name of the flow",
+  "nodes": [
+    { "id": "n1", "kind": "start",    "label": "..." },
+    { "id": "n2", "kind": "step",     "label": "..." },
+    { "id": "n3", "kind": "decision", "label": "...?" },
+    { "id": "n4", "kind": "end",      "label": "..." }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2" },
+    { "from": "n2", "to": "n3" },
+    { "from": "n3", "to": "n4", "label": "yes" },
+    { "from": "n3", "to": "n5", "label": "no"  }
+  ]
 }
 
-Each element is one of these minimal shapes (a downstream renderer fills in defaults):
+Allowed kinds: "start", "step", "decision", "end", "io".
+- "start"  → entry point (one per flow)
+- "end"    → terminal state (multiple OK; failures and successes are both ends)
+  - "decision" → yes/no or A/B branch. The label is a question ending in "?"
+- "step"   → an action or process
+- "io"     → input/output, file write, API call
 
-Node (rectangle, ellipse, or diamond):
-  { "id": "n1", "type": "rectangle", "x": 100, "y": 100,
-    "width": 180, "height": 60, "text": "User clicks Login",
-    "strokeColor": "#1e1e1e", "backgroundColor": "#ffffff" }
+THE ONE RULE THAT MATTERS:
+Every "decision" node MUST have at least 2 outgoing edges in the edges array.
+A decision with only 1 outgoing edge is a bug — the server rejects the diagram. Always emit BOTH branches.
 
-Arrow (connects two nodes by id — use this, not free arrows):
-  { "id": "a1", "type": "arrow",
-    "startBinding": { "elementId": "n1", "focus": 0, "gap": 4 },
-    "endBinding":   { "elementId": "n2", "focus": 0, "gap": 4 },
-    "x": 0, "y": 0, "width": 0, "height": 0,
-    "points": [[0,0],[1,0]] }
-
-CRITICAL — ARROWS ARE NOT OPTIONAL:
-- Every directed transition in the description becomes ONE arrow element.
-- If the flow has N sequential steps, you emit N-1 arrows.
-- If a decision (diamond) branches, each branch gets its own arrow.
-- Every arrow MUST have startBinding.elementId AND endBinding.elementId pointing to real node ids you already emitted.
-- Never skip arrows to save tokens. A scene with nodes but no arrows is a FAILED scene.
-
-Layout:
-- Coordinates don't matter — downstream auto-layout (dagre + snake-wrap) recomputes all x/y. Just emit clean ids and bindings.
-- Decisions (diamonds) for yes/no splits. Rectangles for steps. Ellipses for start/end.
-
-Faithfulness — THIS IS THE MOST IMPORTANT RULE:
-- Every distinct step, service, check, branch, or decision in the user's input becomes its OWN node.
-- Do NOT summarize. Do NOT merge steps. Do NOT omit branches. A 40-step input produces 40+ nodes, not 8.
-- If the input describes multiple parallel flows (FLOW 1, FLOW 2, …), render each flow as its own connected chain. Flows can share nodes where the text says they do.
-- Every "if X, then Y / else Z" becomes a diamond with two outgoing arrows to the two branch targets.
-- Scale is fine — 50, 80, 100+ nodes are all acceptable if the input describes that many steps.
+Faithfulness:
+- Every distinct step, service, check, or branch in the input is its own node. Do NOT collapse or summarize.
+- Every "if X then Y else Z" emits one decision node + two edges (label them "yes"/"no" or with the actual branch names).
+- Failure branches end at an "end" node. They do NOT loop back into the success path.
+- Parallel flows (FLOW 1, FLOW 2) are separate subgraphs sharing nodes only where the input says so.
 
 Labels:
-- Short phrases, 2–6 words. Keep decisions as a question ("Fraud score > 0.8?").
-- Branch arrows carry no label — the target node name implies the path.
+- 2–6 words, sentence case. Decisions end in "?".
+- Edge labels only on edges leaving a "decision" node ("yes", "no", "approved", "denied", etc.).
 
-Coloring:
-- Use backgroundColor to group related nodes. A single flow should mostly share a color family; decisions can pop with a distinct accent.
-- Good palette: #bae6fd (blue), #bbf7d0 (green), #fde68a (yellow), #fecaca (red), #e9d5ff (purple), #fed7aa (orange). White (#ffffff) is fine for neutral steps.
-- Never return an empty elements array. If the input is thin, still produce a best-effort sketch.
+Worked example. Input:
+"User submits order. Charge their card. If declined, retry once; if it still fails, mark FAILED and email user. If charged, mark CONFIRMED, decrement inventory, email user, and queue shipping."
 
-JSON only. Nothing else.`;
+Correct output:
+{
+  "title": "Order checkout",
+  "nodes": [
+    { "id": "n1", "kind": "start",    "label": "User submits order" },
+    { "id": "n2", "kind": "step",     "label": "Charge card" },
+    { "id": "n3", "kind": "decision", "label": "Charge declined?" },
+    { "id": "n4", "kind": "step",     "label": "Retry charge" },
+    { "id": "n5", "kind": "decision", "label": "Retry succeeded?" },
+    { "id": "n6", "kind": "end",      "label": "Order FAILED + email" },
+    { "id": "n7", "kind": "step",     "label": "Mark CONFIRMED" },
+    { "id": "n8", "kind": "step",     "label": "Decrement inventory" },
+    { "id": "n9", "kind": "step",     "label": "Email user" },
+    { "id": "n10", "kind": "end",     "label": "Queue shipping" }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2" },
+    { "from": "n2", "to": "n3" },
+    { "from": "n3", "to": "n4", "label": "yes" },
+    { "from": "n3", "to": "n7", "label": "no"  },
+    { "from": "n4", "to": "n5" },
+    { "from": "n5", "to": "n7", "label": "yes" },
+    { "from": "n5", "to": "n6", "label": "no"  },
+    { "from": "n7", "to": "n8" },
+    { "from": "n8", "to": "n9" },
+    { "from": "n9", "to": "n10" }
+  ]
+}
+
+Notice: both decisions have exactly 2 outgoing edges. Failure ends at n6, never rejoins. Success path n7→n8→n9→n10 starts from the "no" branch of the first decision.
+
+JSON only.`;
 
 const PARSED_SKILL = {
   meta: {
@@ -104,18 +124,22 @@ const PARSED_SKILL = {
     rejects: ["private key", "secret", "password"],
   },
   output_schema: {
-    type: "'excalidraw'",
-    version: 2,
-    source: "'openreap'",
-    elements: "ExcalidrawElement[]",
-    appState: "{ viewBackgroundColor, gridSize }",
-    files: "{}",
+    title: "string",
+    nodes: "[{ id, kind: 'start'|'step'|'decision'|'end'|'io', label, color? }]",
+    edges: "[{ from, to, label? }]",
+    note: "Server converts this graph to an Excalidraw scene before returning.",
   },
   examples: [
     {
-      input: "User clicks Sign Up → frontend POSTs to /api/auth → server issues JWT → client stores in httpOnly cookie.",
+      input: "User clicks Sign Up → POST /api/auth → server issues JWT → client stores cookie.",
       output:
-        "{ type: 'excalidraw', elements: [ rectangle 'User clicks Sign Up', arrow, rectangle '/api/auth', arrow, rectangle 'JWT issued', arrow, rectangle 'Cookie stored' ], appState: {...}, files: {} }",
+        "{ title:'Signup', nodes:[start 'Sign Up', step 'POST /api/auth', step 'Issue JWT', end 'Store cookie'], edges:[n1→n2, n2→n3, n3→n4] }",
+    },
+    {
+      input:
+        "Charge card; if declined, retry once then mark FAILED; if charged, mark CONFIRMED and email.",
+      output:
+        "Two decisions, each with 2 outgoing edges. Failure path ends at 'Order FAILED'. Success path n3-no→n7 (CONFIRMED) → email.",
     },
   ],
   escalate_patterns: [],

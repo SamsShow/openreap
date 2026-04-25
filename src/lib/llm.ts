@@ -79,6 +79,37 @@ export interface LLMResult {
   latency_ms: number;
   model: string;
   cost_usdc: number;
+  thinking?: string;
+}
+
+// Gemma (and other reasoning-capable in-house models) emit a planning
+// preamble before the JSON payload: "Let me think through this...".
+// parseModelJson slices it off to recover the object; this helper keeps
+// that discarded text so the UI can show what the model was reasoning
+// about. Returns undefined when there's nothing meaningful to show.
+export function extractThinking(raw: string): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  // If the output is fenced (```json ... ```), anything before the fence
+  // is the thinking.
+  const fenceStart = trimmed.search(/```/);
+  const braceStart = trimmed.indexOf("{");
+  let cut: number;
+  if (fenceStart >= 0 && (braceStart < 0 || fenceStart < braceStart)) {
+    cut = fenceStart;
+  } else if (braceStart >= 0) {
+    cut = braceStart;
+  } else {
+    // No JSON boundary found — the whole output is effectively prose.
+    cut = trimmed.length;
+  }
+  const preamble = trimmed.slice(0, cut).trim();
+  // Strip common <think>...</think> wrappers some models emit.
+  const unwrapped = preamble
+    .replace(/^<think>\s*/i, "")
+    .replace(/\s*<\/think>\s*$/i, "")
+    .trim();
+  return unwrapped.length > 0 ? unwrapped : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +256,7 @@ const INHOUSE_DEFAULT_MODEL_ID = "llama-3.2-3b-instruct";
 // 60s default suits reasoning models (deepseek-r1 needs 30-50s on typical
 // prompts). Fast non-reasoning models like llama-3.2 finish in <10s so the
 // higher ceiling is harmless. Override with INHOUSE_LLM_TIMEOUT_MS.
-const INHOUSE_DEFAULT_TIMEOUT_MS = 260_000;
+const INHOUSE_DEFAULT_TIMEOUT_MS = 285_000;
 const INHOUSE_MAX_ATTEMPTS = 1;
 const INHOUSE_BASE_BACKOFF_MS = 300;
 
@@ -243,6 +274,7 @@ interface InhouseChatCompletion {
   model?: string;
   choices: Array<{
     message?: { content?: string | null };
+    finish_reason?: string;
   }>;
   usage?: {
     prompt_tokens?: number;
@@ -282,7 +314,7 @@ async function callInhouseLLM(
           { role: "user", content: userInput },
         ],
         temperature: 0.1,
-        max_tokens: 16000,
+        max_tokens: 32000,
       }),
       signal: controller.signal,
     });
@@ -303,6 +335,24 @@ async function callInhouseLLM(
 
   const raw = (body.choices[0]?.message?.content ?? "").trim();
   const content = parseModelJson(raw);
+  const thinking = extractThinking(raw);
+
+  // Log finish_reason + token usage so truncation is observable in prod.
+  // "length" means LM Studio's n_ctx or our max_tokens was hit and the
+  // output was truncated — parseModelJson's truncation-repair may or may
+  // not have saved it.
+  const finishReason = body.choices[0]?.finish_reason ?? "unknown";
+  const promptTokens = body.usage?.prompt_tokens ?? 0;
+  const completionTokens = body.usage?.completion_tokens ?? 0;
+  if (finishReason === "length") {
+    console.warn(
+      `[inhouse] finish_reason=length — output truncated. prompt=${promptTokens} completion=${completionTokens} total=${body.usage?.total_tokens ?? 0}. If completion is well under max_tokens, LM Studio's n_ctx is the cap — increase Context Length in the model load settings.`
+    );
+  } else {
+    console.info(
+      `[inhouse] finish_reason=${finishReason} prompt=${promptTokens} completion=${completionTokens} latency=${latency_ms}ms`
+    );
+  }
 
   return {
     content,
@@ -311,6 +361,7 @@ async function callInhouseLLM(
     latency_ms,
     model: `inhouse:${body.model ?? modelId}`,
     cost_usdc: 0,
+    thinking,
   };
 }
 

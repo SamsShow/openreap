@@ -13,6 +13,11 @@ import {
 import { callLLM } from "@/lib/llm";
 import type { ModelKey } from "@/lib/llm";
 import type { ParsedSkill } from "@/lib/skill-parser";
+import {
+  graphToExcalidraw,
+  looksLikeGraph,
+  normalizeGraph,
+} from "@/lib/graph-to-excalidraw";
 
 // ---------------------------------------------------------------------------
 // Per-instance in-flight deduplication keyed on the x-payment header.
@@ -439,7 +444,7 @@ async function runOnce(request: NextRequest, slug: string) {
   // attempt + OpenRouter fallback.
   let llmResult;
   let llmErr: unknown = null;
-  const llmBudgetMs = 270_000;
+  const llmBudgetMs = 290_000;
   try {
     llmResult = await Promise.race([
       callLLM(agent.system_prompt, input, agent.model as ModelKey),
@@ -477,11 +482,29 @@ async function runOnce(request: NextRequest, slug: string) {
     );
   }
 
+  // Step 7.5 — Diagram Weaver post-process. The model emits a tiny
+  // {nodes, edges} graph schema (much more reliable for a 9B model than
+  // raw Excalidraw JSON); we validate branching invariants and convert
+  // to the Excalidraw scene format the UI renders.
+  let finalOutput: unknown = llmResult.content;
+  let graphWarnings: string[] | undefined;
+  if (slug === "diagram-weaver" && looksLikeGraph(llmResult.content)) {
+    const { graph, warnings } = normalizeGraph(llmResult.content);
+    if (warnings.length > 0) {
+      console.warn(
+        `[diagram-weaver] graph warnings (${warnings.length}):`,
+        warnings
+      );
+    }
+    finalOutput = graphToExcalidraw(graph);
+    graphWarnings = warnings;
+  }
+
   // Step 8 — Upgrade the claim row to completed with the LLM output.
   await sql`
     UPDATE jobs
     SET
-      output_payload = ${JSON.stringify(llmResult.content)}::jsonb,
+      output_payload = ${JSON.stringify(finalOutput)}::jsonb,
       status = 'completed',
       tokens_used = ${llmResult.tokens},
       llm_cost_usdc = ${llmResult.cost_usdc},
@@ -507,12 +530,17 @@ async function runOnce(request: NextRequest, slug: string) {
     UPDATE agents SET jobs_completed = jobs_completed + 1 WHERE id = ${agent.id}
   `;
 
-  // Step 11 — Return output
+  // Step 11 — Return output. `thinking` is the in-house model's reasoning
+  // preamble (Gemma emits "Let me plan..." before the JSON); surfaced so
+  // the UI can show what the model was thinking. Only present on fresh
+  // runs — cached replays from the jobs table don't have it.
   return NextResponse.json({
-    output: llmResult.content,
+    output: finalOutput,
     job_id: jobId,
     tx_hash: verified.tx_hash,
     model: llmResult.model,
     tokens: llmResult.tokens,
+    thinking: llmResult.thinking,
+    warnings: graphWarnings,
   });
 }
