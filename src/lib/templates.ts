@@ -479,6 +479,66 @@ example_2:
 - Public company financial projections
 - Personal data about named individuals`,
   },
+  {
+    id: "regex-surgeon",
+    role: "Developer",
+    skillType: "Regex Generator",
+    description:
+      "Plain English → working regex with explanation, accept/reject test vectors, and JS/Python/Go snippets.",
+    preview: `name: regex-surgeon\nprice: 0.25\nskill: regex from English\nrejects: secrets`,
+    downloads: 0,
+    skillMd: `## meta
+name: "Regex Surgeon"
+version: "1.0"
+author: "Reap"
+price_usdc: 0.25
+category: "tech"
+model_tier: "pro"
+
+## service
+description: |
+  Takes a plain-English description of a string-matching problem and returns a working regex with explanation, accept/reject test vectors, and ready-to-paste snippets for JavaScript, Python, and Go. Built so you can drop the output into a unit test before you ship.
+
+accepts:
+  - Validation patterns (emails, URLs, phones, slugs, semver)
+  - Extraction patterns with named capture groups
+  - Replacement patterns with backreferences
+  - Cross-flavor ports (PCRE to RE2, sed to JS)
+
+rejects:
+  - private key
+  - password
+  - credit card
+
+## output_format
+{
+  "pattern": "string",
+  "flavor": "ECMAScript | PCRE | RE2 | POSIX",
+  "flags": "string",
+  "explanation": "string",
+  "matches": ["string"],
+  "rejects": ["string"],
+  "language_snippets": {
+    "javascript": "string",
+    "python": "string",
+    "go": "string"
+  },
+  "warnings": ["string"]
+}
+
+## examples
+example_1:
+  input: "Match US ZIP codes — 5 digits or ZIP+4 (12345 or 12345-6789), reject letters."
+  output: '{"pattern":"^\\\\d{5}(-\\\\d{4})?$","flavor":"ECMAScript","flags":"","explanation":"Anchored. Five digits, optional hyphen and four more.","matches":["12345","12345-6789"],"rejects":["1234","12345-678","abcde"],"language_snippets":{"javascript":"const ZIP = /^\\\\d{5}(-\\\\d{4})?$/;","python":"ZIP = re.compile(r\\"^\\\\d{5}(-\\\\d{4})?$\\")","go":"var ZIP = regexp.MustCompile(\`^\\\\d{5}(-\\\\d{4})?$\`)"},"warnings":[]}'
+
+example_2:
+  input: "Pull request id and latency from lines like [req=abc123] handled in 42ms."
+  output: '{"pattern":"\\\\[req=(?<id>[a-z0-9]+)\\\\] handled in (?<ms>\\\\d+)ms","flavor":"ECMAScript","flags":"","explanation":"Two named capture groups: id and ms.","matches":["[req=abc123] handled in 42ms"],"rejects":["[req=ABC] handled in 42ms","handled in 42ms"],"language_snippets":{"javascript":"/\\\\[req=(?<id>[a-z0-9]+)\\\\] handled in (?<ms>\\\\d+)ms/","python":"re.compile(r\\"\\\\[req=(?P<id>[a-z0-9]+)\\\\] handled in (?P<ms>\\\\d+)ms\\")","go":"// RE2 supports named groups but not lookaround"},"warnings":["RE2 (Go) lacks lookbehind."]}'
+
+## escalate_if
+- Pattern needs to match a context-free language (HTML, nested parens) — recommend a parser
+- Input requests bulk extraction of secrets or PII`,
+  },
 ];
 
 export function findTemplate(id: string): AgentTemplate | undefined {

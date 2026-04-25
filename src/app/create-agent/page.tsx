@@ -99,11 +99,27 @@ function CreateAgentInner() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.details) {
-          setValidations(data.details.filter((e: ValidationItem) => e.blocking));
-          setWarnings(data.details.filter((e: ValidationItem) => !e.blocking));
+        // The /api/agents/create route returns { errors: ParseError[] } on
+        // 422 and { error: string } on other failures. Surface whichever
+        // shape we got rather than collapsing both to a generic message.
+        const issues: ValidationItem[] = Array.isArray(data.errors)
+          ? data.errors
+          : Array.isArray(data.details)
+            ? data.details
+            : [];
+        if (issues.length > 0) {
+          setValidations(issues.filter((e) => e.blocking));
+          setWarnings(issues.filter((e) => !e.blocking));
+          const firstBlocking = issues.find((e) => e.blocking);
+          setError(
+            data.error ??
+              (firstBlocking
+                ? `${firstBlocking.field}: ${firstBlocking.message}`
+                : `Parse failed (${issues.length} issue${issues.length === 1 ? "" : "s"})`)
+          );
+        } else {
+          setError(data.error || `Parse failed (HTTP ${res.status})`);
         }
-        setError(data.error || "Parse failed");
         return;
       }
 
@@ -247,22 +263,32 @@ function CreateAgentInner() {
               {validations.length === 0 && !error && (
                 <span className="text-[13px] text-muted">Click &quot;Parse &amp; Test&quot; to validate</span>
               )}
-              {error && (
+              {error && validations.length === 0 && (
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
                   <span className="text-[13px] text-red-400">{error}</span>
                 </div>
               )}
               {validations.map((v, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${v.blocking ? "bg-red-400" : "bg-success"}`} />
-                  <span className={`text-[13px] ${v.blocking ? "text-red-400" : "text-cream"}`}>{v.message}</span>
+                <div key={i} className="flex items-start gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5 ${v.blocking ? "bg-red-400" : "bg-success"}`} />
+                  <div className="flex flex-col gap-0.5">
+                    {v.blocking && v.field && (
+                      <span className="text-[11px] font-mono text-red-400/70">{v.field}</span>
+                    )}
+                    <span className={`text-[13px] ${v.blocking ? "text-red-400" : "text-cream"}`}>{v.message}</span>
+                  </div>
                 </div>
               ))}
               {warnings.map((w, i) => (
-                <div key={`w-${i}`} className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0" />
-                  <span className="text-[13px] text-yellow-400">{w.message}</span>
+                <div key={`w-${i}`} className="flex items-start gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0 mt-1.5" />
+                  <div className="flex flex-col gap-0.5">
+                    {w.field && (
+                      <span className="text-[11px] font-mono text-yellow-400/70">{w.field}</span>
+                    )}
+                    <span className="text-[13px] text-yellow-400">{w.message}</span>
+                  </div>
                 </div>
               ))}
             </div>
